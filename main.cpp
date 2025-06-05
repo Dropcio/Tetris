@@ -1,12 +1,20 @@
 #include <SFML/Graphics.hpp>
 #include <SFML/Window.hpp>
 #include <string>
+#include <vector>
+#include <algorithm>
+#include <random>
 #include "piece.hpp"
 
+using namespace std;
 enum class GameState { MENU, GAME, GAME_OVER };
 
 enum class GameMode { NONE, NORMAL, ADVANCED, EASY, HARD };
 GameMode gameMode = GameMode::NONE;
+
+vector<TetrominoType> bag;
+int bagPos = 0;
+mt19937 rng(std::random_device{}());
 
 const int boardWidth = 10;
 const int boardHeight = 20;
@@ -18,7 +26,8 @@ int level = 1;
 
 int board[boardHeight][boardWidth] = {0};
 
-Piece currentPiece(randomTetromino());
+TetrominoType drawFromBag();
+Piece currentPiece(drawFromBag());
 
 // Funkcja kolizji w dół
 bool canMoveDown(const Piece& piece) 
@@ -78,6 +87,22 @@ int clearLines() //Czyszczenie linii
     return linesCleared;
 }
 
+void refillBag() 
+{
+    bag.clear();
+    for (int i = 0; i < 7; ++i)
+        bag.push_back((TetrominoType)i);
+    shuffle(bag.begin(), bag.end(), rng);
+    bagPos = 0;
+}
+
+TetrominoType drawFromBag() 
+{
+    if (bagPos >= (int)bag.size())
+        refillBag();
+    return bag[bagPos++];
+}
+
 void setPieceXToMouse(sf::RenderWindow& window, Piece& piece)
 {
     int mx = sf::Mouse::getPosition(window).x;
@@ -119,8 +144,8 @@ void setPieceXToMouse(sf::RenderWindow& window, Piece& piece)
 
 int main()
 {
+    refillBag();
     sf::RenderWindow window(sf::VideoMode(800, 600), "Tetris!");
-
     GameState gameState = GameState::MENU;
 
     sf::Font font;
@@ -318,7 +343,7 @@ int main()
                         fallDelay = std::max(0.1f, 0.5f - 0.05f * (level - 1)); // im wyższy level, tym szybciej, min. 0.1s
 
                         // Nowy klocek na górze
-                        currentPiece = Piece(randomTetromino());
+                        currentPiece = Piece(drawFromBag());
                         setPieceXToMouse(window, currentPiece);
 
                         // Wykrywanie końca gry
@@ -341,7 +366,7 @@ int main()
                         for (int y = 0; y < boardHeight; y++) 
                             for (int x = 0; x < boardWidth; x++) 
                                 board[y][x] = 0;
-                        currentPiece = Piece(randomTetromino());
+                        currentPiece = Piece(drawFromBag());
                         setPieceXToMouse(window, currentPiece);
 
                         // *** TU DODAJ TO: ***
@@ -389,7 +414,7 @@ int main()
                     fallDelay = std::max(0.1f, 0.5f - 0.05f * (level - 1));
                     
                     // Nowy klocek na górze pod myszką
-                    currentPiece = Piece(randomTetromino());
+                    currentPiece = Piece(drawFromBag());
                     setPieceXToMouse(window, currentPiece);
 
                     for (int px = 0; px < 4; ++px) 
@@ -433,7 +458,7 @@ int main()
                 fallDelay = std::max(0.1f, 0.5f - 0.05f * (level - 1)); // im wyższy level, tym szybciej, min. 0.1s
 
                 // Nowy klocek na górze
-                currentPiece = Piece(randomTetromino());
+                currentPiece = Piece(drawFromBag());
                 setPieceXToMouse(window, currentPiece);
 
                 // Wykrywanie końca gry
