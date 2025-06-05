@@ -1,8 +1,12 @@
 #include <SFML/Graphics.hpp>
 #include <SFML/Window.hpp>
 #include <string>
+#include "piece.hpp"
 
 enum class GameState { MENU, GAME, GAME_OVER };
+
+enum class GameMode { NONE, NORMAL, ADVANCED, EASY, HARD };
+GameMode gameMode = GameMode::NONE;
 
 const int boardWidth = 10;
 const int boardHeight = 20;
@@ -14,18 +18,17 @@ int level = 1;
 
 int board[boardHeight][boardWidth] = {0};
 
-struct Piece {
-    int x, y;
-    int shape[2][2] = { {1,1}, {1,1} }; // Klocek O
-};
-
-Piece currentPiece = {4, 0}; // Start na środku
+Piece currentPiece(randomTetromino());
 
 // Funkcja kolizji w dół
-bool canMoveDown(const Piece& piece) {
-    for (int py = 0; py < 2; ++py) {
-        for (int px = 0; px < 2; ++px) {
-            if (piece.shape[py][px]) {
+bool canMoveDown(const Piece& piece) 
+{
+    for (int py = 0; py < 4; ++py) 
+    {
+        for (int px = 0; px < 4; ++px) 
+        {
+            if (piece.shape[py][px]) 
+            {
                 int nx = piece.x + px;
                 int ny = piece.y + py + 1;
                 // Sprawdzamy czy poza planszę
@@ -41,7 +44,7 @@ bool canMoveDown(const Piece& piece) {
 int clearLines() //Czyszczenie linii
 {
     int linesCleared = 0;
-    for (int y = boardHeight - 1; y >= 0; --y) 
+    for (int y = boardHeight - 1; y >= 0; --y)
     {
         bool full = true;
         for (int x = 0; x < boardWidth; ++x) 
@@ -82,13 +85,25 @@ void setPieceXToMouse(sf::RenderWindow& window, Piece& piece)
     int offsetX = (window.getSize().x - gridWidth) / 2;
 
     int newX = (mx - offsetX) / cellSize;
-    if (newX < 0) newX = 0;
-    if (newX > boardWidth - 2) newX = boardWidth - 2;
+
+    // Szukamy skrajnych px zajętych przez klocka (minPx, maxPx)
+    int minPx = 4, maxPx = -1;
+    for (int px = 0; px < 4; ++px)
+        for (int py = 0; py < 4; ++py)
+            if (piece.shape[py][px]) 
+            {
+                if (px < minPx) minPx = px;
+                if (px > maxPx) maxPx = px;
+            }
+
+    // Ograniczenia brzegowe (lewa i prawa krawędź planszy)
+    if (newX < -minPx) newX = -minPx;
+    if (newX > boardWidth - 1 - maxPx) newX = boardWidth - 1 - maxPx;
 
     // Kolizja na X
     bool canMove = true;
-    for (int py = 0; py < 2; ++py)
-        for (int px = 0; px < 2; ++px)
+    for (int py = 0; py < 4; ++py)
+        for (int px = 0; px < 4; ++px)
             if (piece.shape[py][px])
             {
                 int nx = newX + px;
@@ -99,7 +114,7 @@ void setPieceXToMouse(sf::RenderWindow& window, Piece& piece)
     if (canMove)
         piece.x = newX;
     else
-        piece.x = 4; // fallback na środek (jeśli się nie da)
+        piece.x = 4; // fallback na środek jeśli się nie da
 }
 
 int main()
@@ -110,9 +125,6 @@ int main()
 
     sf::Font font;
     font.loadFromFile("arial.ttf"); 
-
-    sf::Text menuText("TETRIS\n[Enter] START", font, 48);
-    menuText.setPosition(200, 200);
 
     sf::Text gameText("Tetris Gra - [Esc] = Game Over", font, 32);
     gameText.setPosition(130, 250);
@@ -143,6 +155,12 @@ int main()
     summaryText.setFillColor(sf::Color::White);
     summaryText.setPosition(100, 350);
 
+    sf::Text menuText("WYBIERZ TRYB GRY:\n1 - Normalny\n2 - Zaawansowany\n3 - Łatwy\n4 - Trudny", font, 32);
+    menuText.setPosition(100, 150);
+
+    sf::Text notAvailableText("Ten tryb nie jest jeszcze dostępny\nWciśnij ENTER żeby wrócić do menu", font, 32);
+    notAvailableText.setPosition(100, 400);
+
     sf::Clock fallClock;
     float fallDelay = 0.5f;
 
@@ -155,82 +173,128 @@ int main()
             {
                 window.close();
             }
-
             if (event.type == sf::Event::KeyPressed)
             {
                 if (gameState == GameState::MENU)
                 {
-                    if (event.key.code == sf::Keyboard::Enter) 
+                    if (gameState == GameState::MENU)
                     {
-                        gameState = GameState::GAME;
+                        if (gameMode == GameMode::NONE) // Tylko jeśli jeszcze nie wybrano trybu
+                        {
+                            if (event.key.code == sf::Keyboard::Num1) 
+                            {
+                                gameMode = GameMode::NORMAL;
+                                gameState = GameState::GAME;
+                            }
+                            else if (event.key.code == sf::Keyboard::Num2) 
+                            {
+                                gameMode = GameMode::ADVANCED;
+                            }
+                            else if (event.key.code == sf::Keyboard::Num3) 
+                            {
+                                gameMode = GameMode::EASY;
+                            }
+                            else if (event.key.code == sf::Keyboard::Num4) 
+                            {
+                                gameMode = GameMode::HARD;
+                            }
+                        }
+                        else if (gameMode != GameMode::NORMAL)
+                        {
+                            // Każdy inny tryb poza NORMALNYM — nie obsługiwany
+                            if (event.key.code == sf::Keyboard::Enter) 
+                            {
+                                gameMode = GameMode::NONE; // wróć do menu wyboru trybu
+                            }
+                        }
                     }
                 }
                 else if (gameState == GameState::GAME)
                 {
+                    // DODAJ TEN BLOK (obsługa klawiszy!)
                     if (event.key.code == sf::Keyboard::Escape) 
                     {
                         gameState = GameState::GAME_OVER;
                     }
-                    // Sterowanie klockiem
-                    if (event.key.code == sf::Keyboard::Left) 
+                    else if (event.key.code == sf::Keyboard::Up) // rotate right
                     {
-                        // Ruch w lewo z kolizją
-                        bool canMove = true;
-                        for (int py = 0; py < 2; ++py) 
+                        if (currentPiece.type != TetrominoType::O) 
                         {
-                            for (int px = 0; px < 2; ++px) 
-                            {
+                            Piece tmp = currentPiece;
+                            tmp.rotateRight();
+                            // Sprawdź kolizję po rotacji:
+                            bool ok = true;
+                            for (int py = 0; py < 4; ++py)
+                            for (int px = 0; px < 4; ++px)
+                                if (tmp.shape[py][px]) 
+                                {
+                                    int nx = tmp.x + px;
+                                    int ny = tmp.y + py;
+                                    if (nx < 0 || nx >= boardWidth || ny < 0 || ny >= boardHeight || board[ny][nx]) ok = false;
+                                }
+                            if (ok) currentPiece = tmp;
+                        }
+                    }
+                    else if (event.key.code == sf::Keyboard::Z) // rotate left
+                    {
+                        if (currentPiece.type != TetrominoType::O) 
+                        {
+                            Piece tmp = currentPiece;
+                            tmp.rotateLeft();
+                            bool ok = true;
+                            for (int py = 0; py < 4; ++py)
+                            for (int px = 0; px < 4; ++px)
+                                if (tmp.shape[py][px]) 
+                                {
+                                    int nx = tmp.x + px;
+                                    int ny = tmp.y + py;
+                                    if (nx < 0 || nx >= boardWidth || ny < 0 || ny >= boardHeight || board[ny][nx]) ok = false;
+                                }
+                            if (ok) currentPiece = tmp;
+                        }
+                    }
+                    // --- lewo ---
+                    else if (event.key.code == sf::Keyboard::Left) 
+                    {
+                        bool canMove = true;
+                        for (int py = 0; py < 4; ++py) 
+                            for (int px = 0; px < 4; ++px) 
                                 if (currentPiece.shape[py][px]) 
                                 {
                                     int nx = currentPiece.x + px - 1;
                                     int ny = currentPiece.y + py;
                                     if (nx < 0 || board[ny][nx]) 
-                                    {
                                         canMove = false;
-                                    }
                                 }
-                            }
-                        }
-                        if (canMove) 
-                        {
-                            currentPiece.x--;
-                        }
+                        if (canMove) currentPiece.x--;
                     }
+                    // --- prawo ---
                     else if (event.key.code == sf::Keyboard::Right) 
                     {
-                        // Ruch w prawo z kolizją
                         bool canMove = true;
-                        for (int py = 0; py < 2; ++py) 
-                        {
-                            for (int px = 0; px < 2; ++px) 
-                            {
+                        for (int py = 0; py < 4; ++py) 
+                            for (int px = 0; px < 4; ++px) 
                                 if (currentPiece.shape[py][px]) 
                                 {
                                     int nx = currentPiece.x + px + 1;
                                     int ny = currentPiece.y + py;
                                     if (nx >= boardWidth || board[ny][nx]) 
-                                    {
                                         canMove = false;
-                                    }
                                 }
-                            }
-                        }
-                        if (canMove) {
-                            currentPiece.x++;
-                        }
+                        if (canMove) currentPiece.x++;
                     }
+                    // --- w dół ---
                     else if (event.key.code == sf::Keyboard::Down) 
                     {
-                        // Opuszczanie klocka w dół z kolizją - soft drop
                         if (canMoveDown(currentPiece)) 
                         {
                             currentPiece.y++;
                             score += 1;
                         }
                     }
+                    // --- hard drop ---
                     else if (event.key.code == sf::Keyboard::Space) 
                     {
-                        // Hard drop
                         int startY = currentPiece.y;
                         while (canMoveDown(currentPiece)) 
                         {
@@ -239,16 +303,10 @@ int main()
                         score += 2 * (currentPiece.y - startY);
 
                         // "Wklej" klocek na planszę
-                        for (int py = 0; py < 2; ++py) 
-                        {
-                            for (int px = 0; px < 2; ++px) 
-                            {
+                        for (int py = 0; py < 4; ++py) 
+                            for (int px = 0; px < 4; ++px) 
                                 if (currentPiece.shape[py][px]) 
-                                {
                                     board[currentPiece.y + py][currentPiece.x + px] = 1;
-                                }
-                            }
-                        }
 
                         int lines = clearLines();
                         if (lines == 1) score += 100;
@@ -260,17 +318,13 @@ int main()
                         fallDelay = std::max(0.1f, 0.5f - 0.05f * (level - 1)); // im wyższy level, tym szybciej, min. 0.1s
 
                         // Nowy klocek na górze
-                        currentPiece = {4, 0};
+                        currentPiece = Piece(randomTetromino());
                         setPieceXToMouse(window, currentPiece);
 
                         // Wykrywanie końca gry
-                        for (int px = 0; px < 2; ++px) 
-                        {
+                        for (int px = 0; px < 4; ++px) 
                             if (board[0][currentPiece.x + px]) 
-                            {
                                 gameState = GameState::GAME_OVER;
-                            }
-                        }
                     }
                 }
                 else if (gameState == GameState::GAME_OVER)
@@ -278,51 +332,28 @@ int main()
                     if (event.key.code == sf::Keyboard::Enter) 
                     {
                         gameState = GameState::MENU;
+                        
                     }
                     else if (event.key.code == sf::Keyboard::R) 
                     {
                         gameState = GameState::GAME;
                         // Resetuj planszę i klocek
                         for (int y = 0; y < boardHeight; y++) 
-                        {
                             for (int x = 0; x < boardWidth; x++) 
-                            {
                                 board[y][x] = 0;
-                            }
-                        }
-                        currentPiece = {4, 0};
+                        currentPiece = Piece(randomTetromino());
                         setPieceXToMouse(window, currentPiece);
+
+                        // *** TU DODAJ TO: ***
+                        score = 0;
+                        linesClearedTotal = 0;
+                        level = 1;
                     }
                 }
             }
             if (event.type == sf::Event::MouseMoved && gameState == GameState::GAME)
             {
-                int mx = event.mouseMove.x;
-                int gridWidth = boardWidth * cellSize;
-                int offsetX = (window.getSize().x - gridWidth) / 2;
-
-                // Tylko jeśli mysz jest nad planszą (opcjonalnie, można usunąć ifa)
-                if (mx >= offsetX && mx < offsetX + gridWidth)
-                {
-                    int newX = (mx - offsetX) / cellSize;
-                    // Ogranicz pozycję dla klocka O (2x2)
-                    if (newX < 0) newX = 0;
-                    if (newX > boardWidth - 2) newX = boardWidth - 2;
-
-                    // Sprawdź kolizje na X przed przesunięciem (dla O wystarczy sprawdzić całą szerokość)
-                    bool canMove = true;
-                    for (int py = 0; py < 2; ++py)
-                        for (int px = 0; px < 2; ++px)
-                            if (currentPiece.shape[py][px])
-                            {
-                                int nx = newX + px;
-                                int ny = currentPiece.y + py;
-                                if (nx < 0 || nx >= boardWidth || board[ny][nx])
-                                    canMove = false;
-                            }
-                    if (canMove)
-                        currentPiece.x = newX;
-                }
+                setPieceXToMouse(window, currentPiece);
             }
             if (event.type == sf::Event::MouseButtonPressed && gameState == GameState::GAME)
             {
@@ -337,9 +368,9 @@ int main()
                     score += 2 * (currentPiece.y - startY);
 
                     // "Wklej" klocek na planszę
-                    for (int py = 0; py < 2; ++py) 
+                    for (int py = 0; py < 4; ++py) 
                     {
-                        for (int px = 0; px < 2; ++px) 
+                        for (int px = 0; px < 4; ++px) 
                         {
                             if (currentPiece.shape[py][px]) 
                             {
@@ -358,10 +389,10 @@ int main()
                     fallDelay = std::max(0.1f, 0.5f - 0.05f * (level - 1));
                     
                     // Nowy klocek na górze pod myszką
-                    currentPiece = {4, 0};
+                    currentPiece = Piece(randomTetromino());
                     setPieceXToMouse(window, currentPiece);
 
-                    for (int px = 0; px < 2; ++px) 
+                    for (int px = 0; px < 4; ++px) 
                     {
                         if (board[0][currentPiece.x + px]) 
                         {
@@ -376,13 +407,14 @@ int main()
         // Automatyczne opadanie klocka
         if (gameState == GameState::GAME && fallClock.getElapsedTime().asSeconds() > fallDelay)
         {
-            if (canMoveDown(currentPiece)) {
+            if (canMoveDown(currentPiece)) 
+            {
                 currentPiece.y++;
             } else {
                 // "Wklej" klocek na planszę
-                for (int py = 0; py < 2; ++py)
+                for (int py = 0; py < 4; ++py)
                 {
-                    for (int px = 0; px < 2; ++px) 
+                    for (int px = 0; px < 4; ++px) 
                     {
                         if (currentPiece.shape[py][px]) 
                         {
@@ -401,11 +433,11 @@ int main()
                 fallDelay = std::max(0.1f, 0.5f - 0.05f * (level - 1)); // im wyższy level, tym szybciej, min. 0.1s
 
                 // Nowy klocek na górze
-                currentPiece = {4, 0};
+                currentPiece = Piece(randomTetromino());
                 setPieceXToMouse(window, currentPiece);
 
                 // Wykrywanie końca gry
-                for (int px = 0; px < 2; ++px) 
+                for (int px = 0; px < 4; ++px) 
                 {
                     if (board[0][currentPiece.x + px]) 
                     {
@@ -425,6 +457,10 @@ int main()
             case GameState::MENU:
             {
                 window.draw(menuText);
+                if (gameMode != GameMode::NONE && gameMode != GameMode::NORMAL)
+                {
+                    window.draw(notAvailableText);
+                }
                 break;
             }
             case GameState::GAME:
@@ -446,9 +482,9 @@ int main()
                     }
                 }
                 // Rysowanie klocka
-                for (int py = 0; py < 2; ++py)
+                for (int py = 0; py < 4; ++py)
                 {
-                    for (int px = 0; px < 2; ++px)
+                    for (int px = 0; px < 4; ++px)
                     {
                         if (currentPiece.shape[py][px])
                         {
@@ -463,12 +499,13 @@ int main()
                 // Rysowanie cienia (ghost piece)
                 int ghostY = currentPiece.y;
                 Piece ghostPiece = currentPiece;
-                while (canMoveDown(ghostPiece)) {
+                while (canMoveDown(ghostPiece)) 
+                {
                     ghostPiece.y++;
                 }
-                for (int py = 0; py < 2; ++py)
+                for (int py = 0; py < 4; ++py)
                 {
-                    for (int px = 0; px < 2; ++px)
+                    for (int px = 0; px < 4; ++px)
                     {
                         if (ghostPiece.shape[py][px])
                         {
