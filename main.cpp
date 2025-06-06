@@ -12,6 +12,7 @@ enum class GameState { MENU, GAME, GAME_OVER };
 enum class GameMode { NONE, NORMAL, ADVANCED, EASY, HARD };
 GameMode gameMode = GameMode::NONE;
 
+vector<TetrominoType> nextPieces;
 vector<TetrominoType> bag;
 int bagPos = 0;
 mt19937 rng(std::random_device{}());
@@ -96,11 +97,43 @@ void refillBag()
     bagPos = 0;
 }
 
+void updateNextPieces() 
+{
+    while (nextPieces.size() < 3) 
+    {
+        nextPieces.push_back(drawFromBag());
+    }
+}
+
 TetrominoType drawFromBag() 
 {
     if (bagPos >= (int)bag.size())
         refillBag();
     return bag[bagPos++];
+}
+
+sf::Color getPieceColor(TetrominoType type);
+void drawNextPieces(sf::RenderWindow& window, vector<TetrominoType>& nextPieces, int offsetX, int offsetY, int cellSize) 
+{
+    for (int idx = 0; idx < 3; ++idx) 
+    {
+        Piece preview(nextPieces[idx]);
+        int previewX = offsetX + boardWidth * cellSize + 40;
+        int previewY = offsetY + 40 + idx * 120;
+
+        for (int py = 0; py < 4; ++py) {
+            for (int px = 0; px < 4; ++px) 
+            {
+                if (preview.shape[py][px]) 
+                {
+                    sf::RectangleShape cell(sf::Vector2f(cellSize - 8, cellSize - 8));
+                    cell.setPosition(previewX + px * (cellSize - 6), previewY + py * (cellSize - 6));
+                    cell.setFillColor(getPieceColor(preview.type));
+                    window.draw(cell);
+                }
+            }
+        }
+    }
 }
 
 void setPieceXToMouse(sf::RenderWindow& window, Piece& piece)
@@ -140,6 +173,21 @@ void setPieceXToMouse(sf::RenderWindow& window, Piece& piece)
         piece.x = newX;
     else
         piece.x = 4; // fallback na środek jeśli się nie da
+}
+
+sf::Color getPieceColor(TetrominoType type)
+{
+    switch (type)
+    {
+        case TetrominoType::I: return sf::Color(100, 220, 220);   // pastelowy niebieski
+        case TetrominoType::O: return sf::Color(240, 230, 140);   // jasny żółty
+        case TetrominoType::T: return sf::Color(170, 120, 200);   // fioletowy pastel
+        case TetrominoType::S: return sf::Color(140, 220, 140);   // zielony pastel
+        case TetrominoType::Z: return sf::Color(240, 140, 140);   // różowy pastel
+        case TetrominoType::J: return sf::Color(120, 150, 220);   // niebieski pastel
+        case TetrominoType::L: return sf::Color(240, 180, 90);    // pomarańcz pastel
+        default: return sf::Color(200, 200, 200);
+    }
 }
 
 int main()
@@ -210,6 +258,20 @@ int main()
                             {
                                 gameMode = GameMode::NORMAL;
                                 gameState = GameState::GAME;
+
+                                nextPieces.clear();
+                                updateNextPieces();
+                                currentPiece = Piece(nextPieces.front());
+                                nextPieces.erase(nextPieces.begin());
+                                updateNextPieces();
+                                setPieceXToMouse(window, currentPiece);
+
+                                score = 0;
+                                linesClearedTotal = 0;
+                                level = 1;
+                                for (int y = 0; y < boardHeight; y++)
+                                    for (int x = 0; x < boardWidth; x++)
+                                        board[y][x] = 0;
                             }
                             else if (event.key.code == sf::Keyboard::Num2) 
                             {
@@ -331,7 +393,7 @@ int main()
                         for (int py = 0; py < 4; ++py) 
                             for (int px = 0; px < 4; ++px) 
                                 if (currentPiece.shape[py][px]) 
-                                    board[currentPiece.y + py][currentPiece.x + px] = 1;
+                                    board[currentPiece.y + py][currentPiece.x + px] = (int)currentPiece.type + 1;
 
                         int lines = clearLines();
                         if (lines == 1) score += 100;
@@ -343,7 +405,9 @@ int main()
                         fallDelay = std::max(0.1f, 0.5f - 0.05f * (level - 1)); // im wyższy level, tym szybciej, min. 0.1s
 
                         // Nowy klocek na górze
-                        currentPiece = Piece(drawFromBag());
+                        currentPiece = Piece(nextPieces.front());
+                        nextPieces.erase(nextPieces.begin());
+                        updateNextPieces();
                         setPieceXToMouse(window, currentPiece);
 
                         // Wykrywanie końca gry
@@ -357,19 +421,25 @@ int main()
                     if (event.key.code == sf::Keyboard::Enter) 
                     {
                         gameState = GameState::MENU;
+                        gameMode = GameMode::NONE;
                         
                     }
                     else if (event.key.code == sf::Keyboard::R) 
                     {
                         gameState = GameState::GAME;
-                        // Resetuj planszę i klocek
+
+                        // Reset planszy
                         for (int y = 0; y < boardHeight; y++) 
                             for (int x = 0; x < boardWidth; x++) 
                                 board[y][x] = 0;
-                        currentPiece = Piece(drawFromBag());
+
+                        nextPieces.clear();
+                        updateNextPieces();
+                        currentPiece = Piece(nextPieces.front());
+                        nextPieces.erase(nextPieces.begin());
+                        updateNextPieces();
                         setPieceXToMouse(window, currentPiece);
 
-                        // *** TU DODAJ TO: ***
                         score = 0;
                         linesClearedTotal = 0;
                         level = 1;
@@ -399,7 +469,7 @@ int main()
                         {
                             if (currentPiece.shape[py][px]) 
                             {
-                                board[currentPiece.y + py][currentPiece.x + px] = 1;
+                                board[currentPiece.y + py][currentPiece.x + px] = (int)currentPiece.type + 1;
                             }
                         }
                     }
@@ -414,7 +484,9 @@ int main()
                     fallDelay = std::max(0.1f, 0.5f - 0.05f * (level - 1));
                     
                     // Nowy klocek na górze pod myszką
-                    currentPiece = Piece(drawFromBag());
+                    currentPiece = Piece(nextPieces.front());
+                    nextPieces.erase(nextPieces.begin());
+                    updateNextPieces();
                     setPieceXToMouse(window, currentPiece);
 
                     for (int px = 0; px < 4; ++px) 
@@ -443,7 +515,7 @@ int main()
                     {
                         if (currentPiece.shape[py][px]) 
                         {
-                            board[currentPiece.y + py][currentPiece.x + px] = 1;
+                            board[currentPiece.y + py][currentPiece.x + px] = (int)currentPiece.type + 1;
                         }
                     }
                 }
@@ -458,7 +530,9 @@ int main()
                 fallDelay = std::max(0.1f, 0.5f - 0.05f * (level - 1)); // im wyższy level, tym szybciej, min. 0.1s
 
                 // Nowy klocek na górze
-                currentPiece = Piece(drawFromBag());
+                currentPiece = Piece(nextPieces.front());
+                nextPieces.erase(nextPieces.begin());
+                updateNextPieces();
                 setPieceXToMouse(window, currentPiece);
 
                 // Wykrywanie końca gry
@@ -502,7 +576,15 @@ int main()
                     {
                         sf::RectangleShape cell(sf::Vector2f(cellSize-1, cellSize-1));
                         cell.setPosition(offsetX + x * cellSize, offsetY + y * cellSize);
-                        cell.setFillColor(board[y][x] ? sf::Color::Red : sf::Color(30,30,30));
+                        if (board[y][x]) 
+                        {
+                            sf::Color color = getPieceColor((TetrominoType)(board[y][x] - 1));
+                            cell.setFillColor(color);
+                        } 
+                        else 
+                        {
+                            cell.setFillColor(sf::Color(30,30,30));
+                        }
                         window.draw(cell);
                     }
                 }
@@ -515,7 +597,8 @@ int main()
                         {
                             sf::RectangleShape cell(sf::Vector2f(cellSize-1, cellSize-1));
                             cell.setPosition(offsetX + (currentPiece.x + px) * cellSize, offsetY + (currentPiece.y + py) * cellSize);
-                            cell.setFillColor(sf::Color::Yellow);
+                            sf::Color color = getPieceColor(currentPiece.type);
+                            cell.setFillColor(color);
                             window.draw(cell);
                         }
                     }
@@ -541,6 +624,7 @@ int main()
                         }
                     }
                 }
+                drawNextPieces(window, nextPieces, offsetX, offsetY, cellSize);
                 window.draw(scoreText);
                 window.draw(linesText);
                 window.draw(levelText);
