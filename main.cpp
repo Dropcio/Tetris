@@ -32,6 +32,9 @@ int droughtAdvanced[7] = {0,0,0,0,0,0,0};
 
 int board[boardHeight][boardWidth] = {0};
 
+Piece* holdPiece = nullptr;
+bool holdUsed = false;
+
 TetrominoType drawFromBag();
 Piece currentPiece(drawFromBag());
 
@@ -172,49 +175,6 @@ TetrominoType drawEasy()
     }
     uniform_int_distribution<int> dist(0, weighted.size()-1);
     return weighted[dist(rng)];
-}
-
-TetrominoType drawHard() 
-{
-    vector<TetrominoType> allTypes = {TetrominoType::I, TetrominoType::O, TetrominoType::T, TetrominoType::S, TetrominoType::Z, TetrominoType::J, TetrominoType::L};
-    vector<pair<int, TetrominoType>> stats;
-    for (auto type : allTypes) {
-        int count = 0;
-        Piece test(type);
-        for (int rot = 0; rot < 4; ++rot) {
-            for (int x = -2; x < boardWidth; ++x) {
-                test.x = x;
-                test.y = 0;
-                while (canMoveDown(test)) test.y++;
-                bool ok = true;
-                for (int py = 0; py < 4; ++py)
-                    for (int px = 0; px < 4; ++px)
-                        if (test.shape[py][px]) {
-                            int nx = test.x + px;
-                            int ny = test.y + py;
-                            if (nx < 0 || nx >= boardWidth || ny < 0 || ny >= boardHeight || board[ny][nx])
-                                ok = false;
-                        }
-                if (ok) count++;
-            }
-            test.rotateRight();
-        }
-        stats.push_back({count, type});
-    }
-    int minVal = stats[0].first;
-    for (auto& s : stats) if (s.first < minVal) minVal = s.first;
-
-    vector<TetrominoType> candidates;
-    for (auto& s : stats)
-        if (s.first == minVal)
-            candidates.push_back(s.second);
-
-    // fallback gdyby nie było żadnego kandydata
-    if (candidates.empty())
-        candidates = allTypes;
-
-    uniform_int_distribution<int> dist(0, candidates.size()-1);
-    return candidates[dist(rng)];
 }
 
 TetrominoType drawVeryHard() 
@@ -496,6 +456,7 @@ int main()
                                 nextPieces.erase(nextPieces.begin());
                                 updateNextPieces();
                                 setPieceXToMouse(window, currentPiece);
+                                holdUsed = false;
 
                                 score = 0;
                                 linesClearedTotal = 0;
@@ -514,6 +475,7 @@ int main()
                                 nextPieces.erase(nextPieces.begin());
                                 updateNextPieces();
                                 setPieceXToMouse(window, currentPiece);
+                                holdUsed = false;
 
                                 score = 0;
                                 linesClearedTotal = 0;
@@ -533,6 +495,7 @@ int main()
                                 nextPieces.erase(nextPieces.begin());
                                 updateNextPieces();
                                 setPieceXToMouse(window, currentPiece);
+                                holdUsed = false;
 
                                 score = 0;
                                 linesClearedTotal = 0;
@@ -551,6 +514,7 @@ int main()
                                 nextPieces.erase(nextPieces.begin());
                                 updateNextPieces();
                                 setPieceXToMouse(window, currentPiece);
+                                holdUsed = false;
 
                                 score = 0;
                                 linesClearedTotal = 0;
@@ -689,11 +653,34 @@ int main()
                         nextPieces.erase(nextPieces.begin());
                         updateNextPieces();
                         setPieceXToMouse(window, currentPiece);
+                        holdUsed = false;
 
                         // Wykrywanie końca gry
                         for (int px = 0; px < 4; ++px) 
                             if (board[0][currentPiece.x + px]) 
                                 gameState = GameState::GAME_OVER;
+                    }
+                    else if (event.key.code == sf::Keyboard::C) 
+                    {
+                        if (!holdUsed) 
+                        {
+                            if (holdPiece == nullptr) 
+                            {
+                                holdPiece = new Piece(currentPiece.type);
+                                currentPiece = Piece(nextPieces.front());
+                                nextPieces.erase(nextPieces.begin());
+                                updateNextPieces();
+                                setPieceXToMouse(window, currentPiece);
+                                holdUsed = true;
+                            } 
+                            else 
+                            {
+                                std::swap(currentPiece.type, holdPiece->type);
+                                currentPiece = Piece(currentPiece.type);
+                                setPieceXToMouse(window, currentPiece);
+                            }
+                            holdUsed = true;
+                        }
                     }
                 }
                 else if (gameState == GameState::GAME_OVER)
@@ -719,6 +706,7 @@ int main()
                         nextPieces.erase(nextPieces.begin());
                         updateNextPieces();
                         setPieceXToMouse(window, currentPiece);
+                        holdUsed = false;
 
                         score = 0;
                         linesClearedTotal = 0;
@@ -768,6 +756,7 @@ int main()
                     nextPieces.erase(nextPieces.begin());
                     updateNextPieces();
                     setPieceXToMouse(window, currentPiece);
+                    holdUsed = false;
 
                     for (int px = 0; px < 4; ++px) 
                     {
@@ -814,6 +803,7 @@ int main()
                 nextPieces.erase(nextPieces.begin());
                 updateNextPieces();
                 setPieceXToMouse(window, currentPiece);
+                holdUsed = false;
 
                 // Wykrywanie końca gry
                 for (int px = 0; px < 4; ++px) 
@@ -910,6 +900,31 @@ int main()
                 window.draw(scoreText);
                 window.draw(linesText);
                 window.draw(levelText);
+
+                if (holdPiece) 
+                {
+                    Piece preview(holdPiece->type);
+                    int previewX = 50; // X pozycja holda
+                    int previewY = 180; // Y pozycja holda
+                    for (int py = 0; py < 4; ++py) 
+                    {
+                        for (int px = 0; px < 4; ++px) 
+                        {
+                            if (preview.shape[py][px]) 
+                            {
+                                sf::RectangleShape cell(sf::Vector2f(cellSize - 8, cellSize - 8));
+                                cell.setPosition(previewX + px * (cellSize - 6), previewY + py * (cellSize - 6));
+                                cell.setFillColor(getPieceColor(preview.type));
+                                window.draw(cell);
+                            }
+                        }
+                    }
+                    // Etykieta
+                    sf::Text holdText("HOLD", font, 24);
+                    holdText.setPosition(previewX, previewY - 32);
+                    holdText.setFillColor(sf::Color::White);
+                    window.draw(holdText);
+                }
                 break;
             }
             case GameState::GAME_OVER:
@@ -926,5 +941,6 @@ int main()
         }
         window.display();
     }
+    if (holdPiece) delete holdPiece;
     return 0;
 }
