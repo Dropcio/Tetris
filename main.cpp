@@ -25,7 +25,10 @@ int score = 0;
 int linesClearedTotal = 0;
 int level = 1;
 int drought_I = 0;
-const int drought_limit = 10; // np. 10 ruchów bez I
+const int drought_limit = 10; // np. 10 ruchów bez I tryb hard
+
+const int drought_limit_advanced = 12;
+int droughtAdvanced[7] = {0,0,0,0,0,0,0};
 
 int board[boardHeight][boardWidth] = {0};
 
@@ -171,7 +174,8 @@ TetrominoType drawEasy()
     return weighted[dist(rng)];
 }
 
-TetrominoType drawHard() {
+TetrominoType drawHard() 
+{
     vector<TetrominoType> allTypes = {TetrominoType::I, TetrominoType::O, TetrominoType::T, TetrominoType::S, TetrominoType::Z, TetrominoType::J, TetrominoType::L};
     vector<pair<int, TetrominoType>> stats;
     for (auto type : allTypes) {
@@ -213,7 +217,8 @@ TetrominoType drawHard() {
     return candidates[dist(rng)];
 }
 
-TetrominoType drawVeryHard() {
+TetrominoType drawVeryHard() 
+{
     vector<TetrominoType> allTypes = {TetrominoType::I, TetrominoType::O, TetrominoType::T, TetrominoType::S, TetrominoType::Z, TetrominoType::J, TetrominoType::L};
     int maxHoles = -1;
     vector<TetrominoType> worst;
@@ -248,6 +253,64 @@ TetrominoType drawVeryHard() {
     return chosen;
 }
 
+TetrominoType drawAdvanced() 
+{
+    vector<TetrominoType> allTypes = 
+    {
+        TetrominoType::I, TetrominoType::O, TetrominoType::T,
+        TetrominoType::S, TetrominoType::Z, TetrominoType::J, TetrominoType::L
+    };
+
+    // Sprawdź, czy któryś klocek osiągnął limit drought
+    for (int i = 0; i < 7; ++i) 
+    {
+        if (droughtAdvanced[i] >= drought_limit_advanced) 
+        {
+            // Resetuj droughty
+            for (int j = 0; j < 7; ++j) 
+            {
+                if (j == i) droughtAdvanced[j] = 0;
+                else droughtAdvanced[j]++;
+            }
+            return (TetrominoType)i;
+        }
+    }
+
+    // Budujemy wagę: im większy drought, tym większa szansa
+    vector<int> weights;
+    int totalWeight = 0;
+    for (int i = 0; i < 7; ++i) 
+    {
+        int w = 1 + droughtAdvanced[i];
+        weights.push_back(w);
+        totalWeight += w;
+    }
+
+    // Losujemy klocek proporcjonalnie do wagi
+    uniform_int_distribution<int> dist(1, totalWeight);
+    int rnd = dist(rng);
+    int sum = 0;
+    int chosenIdx = -1;
+    for (int i = 0; i < 7; ++i) 
+    {
+        sum += weights[i];
+        if (rnd <= sum) 
+        {
+            chosenIdx = i;
+            break;
+        }
+    }
+    if (chosenIdx == -1) chosenIdx = 0; // fallback, nie powinno się zdarzyć
+
+    // Aktualizacja droughtów
+    for (int i = 0; i < 7; ++i) 
+    {
+        if (i == chosenIdx) droughtAdvanced[i] = 0;
+        else droughtAdvanced[i]++;
+    }
+    return (TetrominoType)chosenIdx;
+}
+
 void refillBag() 
 {
     bag.clear();
@@ -271,6 +334,8 @@ TetrominoType drawFromBag()
         return drawEasy();
     if (gameMode == GameMode::HARD)
         return drawVeryHard();
+    if (gameMode == GameMode::ADVANCED)
+        return drawAdvanced();
 
     if (bagPos >= (int)bag.size())
         refillBag();
@@ -442,7 +507,21 @@ int main()
                             else if (event.key.code == sf::Keyboard::Num2) 
                             {
                                 gameMode = GameMode::ADVANCED;
-                                // gameState = GameState::GAME;  // nie obsługujemy tego jeszcze
+                                gameState = GameState::GAME;
+                                nextPieces.clear();
+                                updateNextPieces();
+                                currentPiece = Piece(nextPieces.front());
+                                nextPieces.erase(nextPieces.begin());
+                                updateNextPieces();
+                                setPieceXToMouse(window, currentPiece);
+
+                                score = 0;
+                                linesClearedTotal = 0;
+                                level = 1;
+                                for (int y = 0; y < boardHeight; y++)
+                                    for (int x = 0; x < boardWidth; x++)
+                                        board[y][x] = 0;
+                                for (int i = 0; i < 7; ++i) droughtAdvanced[i] = 0; // reset droughtów!
                             }
                             else if (event.key.code == sf::Keyboard::Num3) 
                             {
