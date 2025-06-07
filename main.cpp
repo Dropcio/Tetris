@@ -24,6 +24,8 @@ const int cellSize = 30; // px
 int score = 0;
 int linesClearedTotal = 0;
 int level = 1;
+int drought_I = 0;
+const int drought_limit = 10; // np. 10 ruchów bez I
 
 int board[boardHeight][boardWidth] = {0};
 
@@ -48,6 +50,45 @@ bool canMoveDown(const Piece& piece)
             }
         }
     }
+    return true;
+}
+
+int countHolesAfter(const Piece& piece)  //Do trybu Hard 
+{
+    // Skopiuj planszę
+    int tempBoard[boardHeight][boardWidth];
+    memcpy(tempBoard, board, sizeof(board));
+    // Wstaw klocek na planszę
+    for (int py = 0; py < 4; ++py)
+        for (int px = 0; px < 4; ++px)
+            if (piece.shape[py][px]) {
+                int bx = piece.x + px;
+                int by = piece.y + py;
+                if (bx >= 0 && bx < boardWidth && by >= 0 && by < boardHeight)
+                    tempBoard[by][bx] = (int)piece.type + 1;
+            }
+    // Licz dziury (puste pole z czymś nad sobą)
+    int holes = 0;
+    for (int x = 0; x < boardWidth; ++x) {
+        bool blockFound = false;
+        for (int y = 0; y < boardHeight; ++y) {
+            if (tempBoard[y][x]) blockFound = true;
+            else if (blockFound) holes++;
+        }
+    }
+    return holes;
+}
+
+bool canPlace(const Piece& piece) 
+{
+    for (int py = 0; py < 4; ++py)
+    for (int px = 0; px < 4; ++px)
+        if (piece.shape[py][px]) {
+            int nx = piece.x + px;
+            int ny = piece.y + py;
+            if (nx < 0 || nx >= boardWidth || ny < 0 || ny >= boardHeight || board[ny][nx])
+                return false;
+        }
     return true;
 }
 
@@ -88,10 +129,13 @@ int clearLines() //Czyszczenie linii
     return linesCleared;
 }
 
-bool hasGoodSpot(TetrominoType type) {
+bool hasGoodSpot(TetrominoType type) 
+{
     Piece test(type);
-    for (int rot = 0; rot < 4; ++rot) {
-        for (int x = -2; x < boardWidth; ++x) {
+    for (int rot = 0; rot < 4; ++rot) 
+    {
+        for (int x = -2; x < boardWidth; ++x) 
+        {
             test.x = x;
             test.y = 0;
             // Spuść klocek na sam dół
@@ -100,7 +144,8 @@ bool hasGoodSpot(TetrominoType type) {
             bool ok = true;
             for (int py = 0; py < 4; ++py)
                 for (int px = 0; px < 4; ++px)
-                    if (test.shape[py][px]) {
+                    if (test.shape[py][px]) 
+                    {
                         int nx = test.x + px;
                         int ny = test.y + py;
                         if (nx < 0 || nx >= boardWidth || ny < 0 || ny >= boardHeight || board[ny][nx])
@@ -113,15 +158,94 @@ bool hasGoodSpot(TetrominoType type) {
     return false;
 }
 
-TetrominoType drawEasy() {
+TetrominoType drawEasy() 
+{
     vector<TetrominoType> allTypes = {TetrominoType::I, TetrominoType::O, TetrominoType::T, TetrominoType::S, TetrominoType::Z, TetrominoType::J, TetrominoType::L};
     vector<TetrominoType> weighted;
-    for (auto type : allTypes) {
+    for (auto type : allTypes) 
+    {
         int waga = hasGoodSpot(type) ? 10 : 1;
         for (int i = 0; i < waga; ++i) weighted.push_back(type);
     }
     uniform_int_distribution<int> dist(0, weighted.size()-1);
     return weighted[dist(rng)];
+}
+
+TetrominoType drawHard() {
+    vector<TetrominoType> allTypes = {TetrominoType::I, TetrominoType::O, TetrominoType::T, TetrominoType::S, TetrominoType::Z, TetrominoType::J, TetrominoType::L};
+    vector<pair<int, TetrominoType>> stats;
+    for (auto type : allTypes) {
+        int count = 0;
+        Piece test(type);
+        for (int rot = 0; rot < 4; ++rot) {
+            for (int x = -2; x < boardWidth; ++x) {
+                test.x = x;
+                test.y = 0;
+                while (canMoveDown(test)) test.y++;
+                bool ok = true;
+                for (int py = 0; py < 4; ++py)
+                    for (int px = 0; px < 4; ++px)
+                        if (test.shape[py][px]) {
+                            int nx = test.x + px;
+                            int ny = test.y + py;
+                            if (nx < 0 || nx >= boardWidth || ny < 0 || ny >= boardHeight || board[ny][nx])
+                                ok = false;
+                        }
+                if (ok) count++;
+            }
+            test.rotateRight();
+        }
+        stats.push_back({count, type});
+    }
+    int minVal = stats[0].first;
+    for (auto& s : stats) if (s.first < minVal) minVal = s.first;
+
+    vector<TetrominoType> candidates;
+    for (auto& s : stats)
+        if (s.first == minVal)
+            candidates.push_back(s.second);
+
+    // fallback gdyby nie było żadnego kandydata
+    if (candidates.empty())
+        candidates = allTypes;
+
+    uniform_int_distribution<int> dist(0, candidates.size()-1);
+    return candidates[dist(rng)];
+}
+
+TetrominoType drawVeryHard() {
+    vector<TetrominoType> allTypes = {TetrominoType::I, TetrominoType::O, TetrominoType::T, TetrominoType::S, TetrominoType::Z, TetrominoType::J, TetrominoType::L};
+    int maxHoles = -1;
+    vector<TetrominoType> worst;
+    for (auto type : allTypes) {
+        if (type == TetrominoType::I && drought_I < drought_limit) continue; // przetrzymujemy I
+        int localMax = -1;
+        for (int rot = 0; rot < 4; ++rot) {
+            for (int x = -2; x < boardWidth; ++x) {
+                Piece test(type);
+                test.x = x;
+                test.y = 0;
+                for (int r = 0; r < rot; ++r) test.rotateRight();
+                while (canMoveDown(test)) test.y++;
+                if (canPlace(test)) {
+                    int holes = countHolesAfter(test);
+                    if (holes > localMax) localMax = holes;
+                }
+            }
+        }
+        if (localMax > maxHoles) {
+            maxHoles = localMax;
+            worst.clear();
+            worst.push_back(type);
+        } else if (localMax == maxHoles) {
+            worst.push_back(type);
+        }
+    }
+    // Wybieramy losowo z tych najgorszych
+    uniform_int_distribution<int> dist(0, worst.size() - 1);
+    TetrominoType chosen = worst[dist(rng)];
+    if (chosen == TetrominoType::I) drought_I = 0; else drought_I++;
+    return chosen;
 }
 
 void refillBag() 
@@ -145,6 +269,8 @@ TetrominoType drawFromBag()
 {
     if (gameMode == GameMode::EASY)
         return drawEasy();
+    if (gameMode == GameMode::HARD)
+        return drawVeryHard();
 
     if (bagPos >= (int)bag.size())
         refillBag();
@@ -160,7 +286,8 @@ void drawNextPieces(sf::RenderWindow& window, vector<TetrominoType>& nextPieces,
         int previewX = offsetX + boardWidth * cellSize + 40;
         int previewY = offsetY + 40 + idx * 120;
 
-        for (int py = 0; py < 4; ++py) {
+        for (int py = 0; py < 4; ++py) 
+        {
             for (int px = 0; px < 4; ++px) 
             {
                 if (preview.shape[py][px]) 
@@ -338,7 +465,20 @@ int main()
                             else if (event.key.code == sf::Keyboard::Num4) 
                             {
                                 gameMode = GameMode::HARD;
-                                // gameState = GameState::GAME;  // nie obsługujemy tego jeszcze
+                                gameState = GameState::GAME;
+                                nextPieces.clear();
+                                updateNextPieces();
+                                currentPiece = Piece(nextPieces.front());
+                                nextPieces.erase(nextPieces.begin());
+                                updateNextPieces();
+                                setPieceXToMouse(window, currentPiece);
+
+                                score = 0;
+                                linesClearedTotal = 0;
+                                level = 1;
+                                for (int y = 0; y < boardHeight; y++)
+                                    for (int x = 0; x < boardWidth; x++)
+                                        board[y][x] = 0;
                             }
                         }
                         // Tu nie zmieniaj else if — zostaw tylko dla nieobsługiwanych trybów (czyli ADVANCED/HARD)
@@ -362,37 +502,43 @@ int main()
                     {
                         if (currentPiece.type != TetrominoType::O) 
                         {
+                            bool rotated = false;
+                            // Spróbuj normalnie
                             Piece tmp = currentPiece;
                             tmp.rotateRight();
-                            // Sprawdź kolizję po rotacji:
-                            bool ok = true;
-                            for (int py = 0; py < 4; ++py)
-                            for (int px = 0; px < 4; ++px)
-                                if (tmp.shape[py][px]) 
-                                {
-                                    int nx = tmp.x + px;
-                                    int ny = tmp.y + py;
-                                    if (nx < 0 || nx >= boardWidth || ny < 0 || ny >= boardHeight || board[ny][nx]) ok = false;
-                                }
-                            if (ok) currentPiece = tmp;
+                            if (canPlace(tmp)) { currentPiece = tmp; rotated = true; }
+                            // Spróbuj przesunąć w lewo
+                            if (!rotated) {
+                                tmp.x = currentPiece.x - 1;
+                                if (canPlace(tmp)) { tmp.x = currentPiece.x - 1; currentPiece = tmp; rotated = true; }
+                            }
+                            // Spróbuj przesunąć w prawo
+                            if (!rotated) {
+                                tmp.x = currentPiece.x + 1;
+                                if (canPlace(tmp)) { tmp.x = currentPiece.x + 1; currentPiece = tmp; rotated = true; }
+                            }
                         }
+
                     }
                     else if (event.key.code == sf::Keyboard::Z) // rotate left
                     {
                         if (currentPiece.type != TetrominoType::O) 
                         {
+                            bool rotated = false;
+                            // Spróbuj normalnie
                             Piece tmp = currentPiece;
                             tmp.rotateLeft();
-                            bool ok = true;
-                            for (int py = 0; py < 4; ++py)
-                            for (int px = 0; px < 4; ++px)
-                                if (tmp.shape[py][px]) 
-                                {
-                                    int nx = tmp.x + px;
-                                    int ny = tmp.y + py;
-                                    if (nx < 0 || nx >= boardWidth || ny < 0 || ny >= boardHeight || board[ny][nx]) ok = false;
-                                }
-                            if (ok) currentPiece = tmp;
+                            if (canPlace(tmp)) { currentPiece = tmp; rotated = true; }
+                            // Spróbuj przesunąć w lewo
+                            if (!rotated) {
+                                tmp.x = currentPiece.x - 1;
+                                if (canPlace(tmp)) { tmp.x = currentPiece.x - 1; currentPiece = tmp; rotated = true; }
+                            }
+                            // Spróbuj przesunąć w prawo
+                            if (!rotated) {
+                                tmp.x = currentPiece.x + 1;
+                                if (canPlace(tmp)) { tmp.x = currentPiece.x + 1; currentPiece = tmp; rotated = true; }
+                            }
                         }
                     }
                     // --- lewo ---
@@ -627,17 +773,13 @@ int main()
                 // Rysowanie planszy
                 for (int y = 0; y < boardHeight; ++y)
                 {
-                    for (int x = 0; x < boardWidth; ++x)
-                    {
+                    for (int x = 0; x < boardWidth; ++x) {
                         sf::RectangleShape cell(sf::Vector2f(cellSize-1, cellSize-1));
                         cell.setPosition(offsetX + x * cellSize, offsetY + y * cellSize);
-                        if (board[y][x]) 
-                        {
+                        if (board[y][x]) {
                             sf::Color color = getPieceColor((TetrominoType)(board[y][x] - 1));
                             cell.setFillColor(color);
-                        } 
-                        else 
-                        {
+                        } else {
                             cell.setFillColor(sf::Color(30,30,30));
                         }
                         window.draw(cell);
@@ -650,11 +792,17 @@ int main()
                     {
                         if (currentPiece.shape[py][px])
                         {
-                            sf::RectangleShape cell(sf::Vector2f(cellSize-1, cellSize-1));
-                            cell.setPosition(offsetX + (currentPiece.x + px) * cellSize, offsetY + (currentPiece.y + py) * cellSize);
-                            sf::Color color = getPieceColor(currentPiece.type);
-                            cell.setFillColor(color);
-                            window.draw(cell);
+                            int by = currentPiece.y + py;
+                            int bx = currentPiece.x + px;
+                            // Rysuj tylko jeśli to pole nie jest już zajęte!
+                            if (by >= 0 && by < boardHeight && bx >= 0 && bx < boardWidth && board[by][bx] == 0) 
+                            {
+                                sf::RectangleShape cell(sf::Vector2f(cellSize-1, cellSize-1));
+                                cell.setPosition(offsetX + bx * cellSize, offsetY + by * cellSize);
+                                sf::Color color = getPieceColor(currentPiece.type);
+                                cell.setFillColor(color);
+                                window.draw(cell);
+                            }
                         }
                     }
                 }
