@@ -88,6 +88,42 @@ int clearLines() //Czyszczenie linii
     return linesCleared;
 }
 
+bool hasGoodSpot(TetrominoType type) {
+    Piece test(type);
+    for (int rot = 0; rot < 4; ++rot) {
+        for (int x = -2; x < boardWidth; ++x) {
+            test.x = x;
+            test.y = 0;
+            // Spuść klocek na sam dół
+            while (canMoveDown(test)) test.y++;
+            // Sprawdź czy pasuje bez kolizji
+            bool ok = true;
+            for (int py = 0; py < 4; ++py)
+                for (int px = 0; px < 4; ++px)
+                    if (test.shape[py][px]) {
+                        int nx = test.x + px;
+                        int ny = test.y + py;
+                        if (nx < 0 || nx >= boardWidth || ny < 0 || ny >= boardHeight || board[ny][nx])
+                            ok = false;
+                    }
+            if (ok) return true;
+        }
+        test.rotateRight();
+    }
+    return false;
+}
+
+TetrominoType drawEasy() {
+    vector<TetrominoType> allTypes = {TetrominoType::I, TetrominoType::O, TetrominoType::T, TetrominoType::S, TetrominoType::Z, TetrominoType::J, TetrominoType::L};
+    vector<TetrominoType> weighted;
+    for (auto type : allTypes) {
+        int waga = hasGoodSpot(type) ? 10 : 1;
+        for (int i = 0; i < waga; ++i) weighted.push_back(type);
+    }
+    uniform_int_distribution<int> dist(0, weighted.size()-1);
+    return weighted[dist(rng)];
+}
+
 void refillBag() 
 {
     bag.clear();
@@ -107,6 +143,9 @@ void updateNextPieces()
 
 TetrominoType drawFromBag() 
 {
+    if (gameMode == GameMode::EASY)
+        return drawEasy();
+
     if (bagPos >= (int)bag.size())
         refillBag();
     return bag[bagPos++];
@@ -193,11 +232,12 @@ sf::Color getPieceColor(TetrominoType type)
 int main()
 {
     refillBag();
-    sf::RenderWindow window(sf::VideoMode(800, 600), "Tetris!");
+    sf::RenderWindow window(sf::VideoMode(1000, 800), "Tetris!");
+    //sf::RenderWindow window(sf::VideoMode(800, 600), "Tetris!");
     GameState gameState = GameState::MENU;
 
     sf::Font font;
-    font.loadFromFile("arial.ttf"); 
+    font.loadFromFile("arial.ttf");
 
     sf::Text gameText("Tetris Gra - [Esc] = Game Over", font, 32);
     gameText.setPosition(130, 250);
@@ -228,10 +268,10 @@ int main()
     summaryText.setFillColor(sf::Color::White);
     summaryText.setPosition(100, 350);
 
-    sf::Text menuText("WYBIERZ TRYB GRY:\n1 - Normalny\n2 - Zaawansowany\n3 - Łatwy\n4 - Trudny", font, 32);
+    sf::Text menuText("WYBIERZ TRYB GRY:\n1 - Normalny\n2 - Zaawansowany\n3 - Latwy\n4 - Trudny", font, 32);
     menuText.setPosition(100, 150);
 
-    sf::Text notAvailableText("Ten tryb nie jest jeszcze dostępny\nWciśnij ENTER żeby wrócić do menu", font, 32);
+    sf::Text notAvailableText("Ten tryb nie jest jeszcze dostępny\nWcisnij ENTER żeby wrocic do menu", font, 32);
     notAvailableText.setPosition(100, 400);
 
     sf::Clock fallClock;
@@ -258,7 +298,6 @@ int main()
                             {
                                 gameMode = GameMode::NORMAL;
                                 gameState = GameState::GAME;
-
                                 nextPieces.clear();
                                 updateNextPieces();
                                 currentPiece = Piece(nextPieces.front());
@@ -276,22 +315,38 @@ int main()
                             else if (event.key.code == sf::Keyboard::Num2) 
                             {
                                 gameMode = GameMode::ADVANCED;
+                                // gameState = GameState::GAME;  // nie obsługujemy tego jeszcze
                             }
                             else if (event.key.code == sf::Keyboard::Num3) 
                             {
                                 gameMode = GameMode::EASY;
+                                gameState = GameState::GAME;
+                                nextPieces.clear();
+                                updateNextPieces();
+                                currentPiece = Piece(nextPieces.front());
+                                nextPieces.erase(nextPieces.begin());
+                                updateNextPieces();
+                                setPieceXToMouse(window, currentPiece);
+
+                                score = 0;
+                                linesClearedTotal = 0;
+                                level = 1;
+                                for (int y = 0; y < boardHeight; y++)
+                                    for (int x = 0; x < boardWidth; x++)
+                                        board[y][x] = 0;
                             }
                             else if (event.key.code == sf::Keyboard::Num4) 
                             {
                                 gameMode = GameMode::HARD;
+                                // gameState = GameState::GAME;  // nie obsługujemy tego jeszcze
                             }
                         }
-                        else if (gameMode != GameMode::NORMAL)
+                        // Tu nie zmieniaj else if — zostaw tylko dla nieobsługiwanych trybów (czyli ADVANCED/HARD)
+                        else if (gameMode == GameMode::ADVANCED || gameMode == GameMode::HARD)
                         {
-                            // Każdy inny tryb poza NORMALNYM — nie obsługiwany
                             if (event.key.code == sf::Keyboard::Enter) 
                             {
-                                gameMode = GameMode::NONE; // wróć do menu wyboru trybu
+                                gameMode = GameMode::NONE;
                             }
                         }
                     }
