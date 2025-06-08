@@ -12,6 +12,7 @@
                 "-lsfml-graphics",
                 "-lsfml-window",
                 "-lsfml-system",
+                "-lsfml-audio", 
                 "-o",
                 "main.exe"
             ],

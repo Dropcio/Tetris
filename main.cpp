@@ -1,13 +1,17 @@
 #include <SFML/Graphics.hpp>
 #include <SFML/Window.hpp>
+#include <SFML/Audio.hpp>
 #include <string>
 #include <vector>
 #include <algorithm>
 #include <random>
+#include <cstring>
 #include "piece.hpp"
 
 using namespace std;
-enum class GameState { MENU, GAME, GAME_OVER };
+
+enum class Scene { TITLE, MODE_SELECT, GAME, PAUSE, GAME_OVER };
+Scene scene = Scene::TITLE;
 
 enum class GameMode { NONE, NORMAL, ADVANCED, EASY, HARD };
 GameMode gameMode = GameMode::NONE;
@@ -26,6 +30,7 @@ int linesClearedTotal = 0;
 int level = 1;
 int drought_I = 0;
 const int drought_limit = 10; // np. 10 ruchów bez I tryb hard
+int lastLevel = 1;
 
 const int drought_limit_advanced = 12;
 int droughtAdvanced[7] = {0,0,0,0,0,0,0};
@@ -36,9 +41,17 @@ Piece* holdPiece = nullptr;
 bool holdUsed = false;
 
 TetrominoType drawFromBag();
+
 Piece currentPiece(drawFromBag());
 
-// Funkcja kolizji w dół
+sf::SoundBuffer bufferClear, bufferDrop, bufferGameOver, bufferLevelUp;
+sf::Sound soundClear, soundDrop, soundGameOver, soundLevelUp;
+sf::Music soundtrack;
+
+sf::Clock lockClock;
+bool isTouchingGround = false;
+float lockDelayTime = 0.5f; // ile sekund na manewrowanie po dotknięciu ziemi
+
 bool canMoveDown(const Piece& piece) 
 {
     for (int py = 0; py < 4; ++py) 
@@ -381,15 +394,50 @@ sf::Color getPieceColor(TetrominoType type)
     }
 }
 
+void resetGame(sf::RenderWindow& window) 
+{
+    nextPieces.clear();
+    updateNextPieces();
+    currentPiece = Piece(nextPieces.front());
+    nextPieces.erase(nextPieces.begin());
+    updateNextPieces();
+    setPieceXToMouse(window, currentPiece);
+    holdUsed = false;
+    score = 0;
+    linesClearedTotal = 0;
+    level = 1;
+    drought_I = 0;
+    for (int y = 0; y < boardHeight; y++)
+        for (int x = 0; x < boardWidth; x++)
+            board[y][x] = 0;
+    for (int i = 0; i < 7; ++i) droughtAdvanced[i] = 0;
+}
+
 int main()
 {
     refillBag();
     sf::RenderWindow window(sf::VideoMode(1000, 800), "Tetris!");
     //sf::RenderWindow window(sf::VideoMode(800, 600), "Tetris!");
-    GameState gameState = GameState::MENU;
 
     sf::Font font;
     font.loadFromFile("arial.ttf");
+
+    bufferClear.loadFromFile("sounds/clear.wav");
+    soundClear.setBuffer(bufferClear);
+
+    bufferDrop.loadFromFile("sounds/drop.wav");
+    soundDrop.setBuffer(bufferDrop);
+
+    bufferGameOver.loadFromFile("sounds/gameover.wav");
+    soundGameOver.setBuffer(bufferGameOver);
+
+    bufferLevelUp.loadFromFile("sounds/levelup.wav");
+    soundLevelUp.setBuffer(bufferLevelUp);
+
+    // Muzyka w tle
+    soundtrack.openFromFile("sounds/soundtrack.wav"); 
+    soundtrack.setLoop(true);
+    soundtrack.play();
 
     sf::Text gameText("Tetris Gra - [Esc] = Game Over", font, 32);
     gameText.setPosition(130, 250);
@@ -434,237 +482,162 @@ int main()
         sf::Event event;
         while (window.pollEvent(event))
         {
-            if (event.type == sf::Event::Closed) 
-            {
+            if (event.type == sf::Event::Closed)
                 window.close();
-            }
-            if (event.type == sf::Event::KeyPressed)
+
+            // ----------------
+            // OBSŁUGA SCEN
+            // ----------------
+            if (scene == Scene::TITLE)
             {
-                if (gameState == GameState::MENU)
+                if (event.type == sf::Event::KeyPressed &&
+                    (event.key.code == sf::Keyboard::Enter || event.key.code == sf::Keyboard::Space))
                 {
-                    if (gameState == GameState::MENU)
-                    {
-                        if (gameMode == GameMode::NONE) // Tylko jeśli jeszcze nie wybrano trybu
-                        {
-                            if (event.key.code == sf::Keyboard::Num1) 
-                            {
-                                gameMode = GameMode::NORMAL;
-                                gameState = GameState::GAME;
-                                nextPieces.clear();
-                                updateNextPieces();
-                                currentPiece = Piece(nextPieces.front());
-                                nextPieces.erase(nextPieces.begin());
-                                updateNextPieces();
-                                setPieceXToMouse(window, currentPiece);
-                                holdUsed = false;
-
-                                score = 0;
-                                linesClearedTotal = 0;
-                                level = 1;
-                                for (int y = 0; y < boardHeight; y++)
-                                    for (int x = 0; x < boardWidth; x++)
-                                        board[y][x] = 0;
-                            }
-                            else if (event.key.code == sf::Keyboard::Num2) 
-                            {
-                                gameMode = GameMode::ADVANCED;
-                                gameState = GameState::GAME;
-                                nextPieces.clear();
-                                updateNextPieces();
-                                currentPiece = Piece(nextPieces.front());
-                                nextPieces.erase(nextPieces.begin());
-                                updateNextPieces();
-                                setPieceXToMouse(window, currentPiece);
-                                holdUsed = false;
-
-                                score = 0;
-                                linesClearedTotal = 0;
-                                level = 1;
-                                for (int y = 0; y < boardHeight; y++)
-                                    for (int x = 0; x < boardWidth; x++)
-                                        board[y][x] = 0;
-                                for (int i = 0; i < 7; ++i) droughtAdvanced[i] = 0; // reset droughtów!
-                            }
-                            else if (event.key.code == sf::Keyboard::Num3) 
-                            {
-                                gameMode = GameMode::EASY;
-                                gameState = GameState::GAME;
-                                nextPieces.clear();
-                                updateNextPieces();
-                                currentPiece = Piece(nextPieces.front());
-                                nextPieces.erase(nextPieces.begin());
-                                updateNextPieces();
-                                setPieceXToMouse(window, currentPiece);
-                                holdUsed = false;
-
-                                score = 0;
-                                linesClearedTotal = 0;
-                                level = 1;
-                                for (int y = 0; y < boardHeight; y++)
-                                    for (int x = 0; x < boardWidth; x++)
-                                        board[y][x] = 0;
-                            }
-                            else if (event.key.code == sf::Keyboard::Num4) 
-                            {
-                                gameMode = GameMode::HARD;
-                                gameState = GameState::GAME;
-                                nextPieces.clear();
-                                updateNextPieces();
-                                currentPiece = Piece(nextPieces.front());
-                                nextPieces.erase(nextPieces.begin());
-                                updateNextPieces();
-                                setPieceXToMouse(window, currentPiece);
-                                holdUsed = false;
-
-                                score = 0;
-                                linesClearedTotal = 0;
-                                level = 1;
-                                for (int y = 0; y < boardHeight; y++)
-                                    for (int x = 0; x < boardWidth; x++)
-                                        board[y][x] = 0;
-                            }
-                        }
-                        // Tu nie zmieniaj else if — zostaw tylko dla nieobsługiwanych trybów (czyli ADVANCED/HARD)
-                        else if (gameMode == GameMode::ADVANCED || gameMode == GameMode::HARD)
-                        {
-                            if (event.key.code == sf::Keyboard::Enter) 
-                            {
-                                gameMode = GameMode::NONE;
-                            }
-                        }
-                    }
+                    scene = Scene::MODE_SELECT;
                 }
-                else if (gameState == GameState::GAME)
+            }
+            else if (scene == Scene::MODE_SELECT)
+            {
+                if (event.type == sf::Event::KeyPressed)
                 {
-                    // DODAJ TEN BLOK (obsługa klawiszy!)
-                    if (event.key.code == sf::Keyboard::Escape) 
+                    if (event.key.code == sf::Keyboard::Num1) { gameMode = GameMode::NORMAL; resetGame(window); scene = Scene::GAME; }
+                    else if (event.key.code == sf::Keyboard::Num2) { gameMode = GameMode::ADVANCED; resetGame(window); scene = Scene::GAME; }
+                    else if (event.key.code == sf::Keyboard::Num3) { gameMode = GameMode::EASY; resetGame(window); scene = Scene::GAME; }
+                    else if (event.key.code == sf::Keyboard::Num4) { gameMode = GameMode::HARD; resetGame(window); scene = Scene::GAME; }
+                }
+            }
+            else if (scene == Scene::GAME)
+            {
+                if (event.type == sf::Event::KeyPressed)
+                {
+                    if (event.key.code == sf::Keyboard::Escape)
                     {
-                        gameState = GameState::GAME_OVER;
+                        scene = Scene::PAUSE;
                     }
-                    else if (event.key.code == sf::Keyboard::Up) // rotate right
+                    else if (event.key.code == sf::Keyboard::Up)
                     {
-                        if (currentPiece.type != TetrominoType::O) 
+                        if (currentPiece.type != TetrominoType::O)
                         {
                             bool rotated = false;
-                            // Spróbuj normalnie
                             Piece tmp = currentPiece;
                             tmp.rotateRight();
                             if (canPlace(tmp)) { currentPiece = tmp; rotated = true; }
-                            // Spróbuj przesunąć w lewo
-                            if (!rotated) {
+                            if (!rotated)
+                            {
                                 tmp.x = currentPiece.x - 1;
-                                if (canPlace(tmp)) { tmp.x = currentPiece.x - 1; currentPiece = tmp; rotated = true; }
+                                if (canPlace(tmp)) { currentPiece = tmp; rotated = true; }
                             }
-                            // Spróbuj przesunąć w prawo
-                            if (!rotated) {
+                            if (!rotated)
+                            {
                                 tmp.x = currentPiece.x + 1;
-                                if (canPlace(tmp)) { tmp.x = currentPiece.x + 1; currentPiece = tmp; rotated = true; }
+                                if (canPlace(tmp)) { currentPiece = tmp; rotated = true; }
                             }
+                            if (isTouchingGround) lockClock.restart();
                         }
-
                     }
-                    else if (event.key.code == sf::Keyboard::Z) // rotate left
+                    else if (event.key.code == sf::Keyboard::Z)
                     {
-                        if (currentPiece.type != TetrominoType::O) 
+                        if (currentPiece.type != TetrominoType::O)
                         {
                             bool rotated = false;
-                            // Spróbuj normalnie
                             Piece tmp = currentPiece;
                             tmp.rotateLeft();
                             if (canPlace(tmp)) { currentPiece = tmp; rotated = true; }
-                            // Spróbuj przesunąć w lewo
-                            if (!rotated) {
+                            if (!rotated)
+                            {
                                 tmp.x = currentPiece.x - 1;
-                                if (canPlace(tmp)) { tmp.x = currentPiece.x - 1; currentPiece = tmp; rotated = true; }
+                                if (canPlace(tmp)) { currentPiece = tmp; rotated = true; }
                             }
-                            // Spróbuj przesunąć w prawo
-                            if (!rotated) {
+                            if (!rotated)
+                            {
                                 tmp.x = currentPiece.x + 1;
-                                if (canPlace(tmp)) { tmp.x = currentPiece.x + 1; currentPiece = tmp; rotated = true; }
+                                if (canPlace(tmp)) { currentPiece = tmp; rotated = true; }
                             }
+                            if (isTouchingGround) lockClock.restart();
                         }
                     }
-                    // --- lewo ---
-                    else if (event.key.code == sf::Keyboard::Left) 
+                    else if (event.key.code == sf::Keyboard::Left)
                     {
                         bool canMove = true;
-                        for (int py = 0; py < 4; ++py) 
-                            for (int px = 0; px < 4; ++px) 
-                                if (currentPiece.shape[py][px]) 
+                        for (int py = 0; py < 4; ++py)
+                            for (int px = 0; px < 4; ++px)
+                                if (currentPiece.shape[py][px])
                                 {
                                     int nx = currentPiece.x + px - 1;
                                     int ny = currentPiece.y + py;
-                                    if (nx < 0 || board[ny][nx]) 
+                                    if (nx < 0 || board[ny][nx])
                                         canMove = false;
                                 }
                         if (canMove) currentPiece.x--;
+                        if (isTouchingGround) lockClock.restart();
                     }
-                    // --- prawo ---
-                    else if (event.key.code == sf::Keyboard::Right) 
+                    else if (event.key.code == sf::Keyboard::Right)
                     {
                         bool canMove = true;
-                        for (int py = 0; py < 4; ++py) 
-                            for (int px = 0; px < 4; ++px) 
-                                if (currentPiece.shape[py][px]) 
+                        for (int py = 0; py < 4; ++py)
+                            for (int px = 0; px < 4; ++px)
+                                if (currentPiece.shape[py][px])
                                 {
                                     int nx = currentPiece.x + px + 1;
                                     int ny = currentPiece.y + py;
-                                    if (nx >= boardWidth || board[ny][nx]) 
+                                    if (nx >= boardWidth || board[ny][nx])
                                         canMove = false;
                                 }
                         if (canMove) currentPiece.x++;
+                        if (isTouchingGround) lockClock.restart();
                     }
-                    // --- w dół ---
-                    else if (event.key.code == sf::Keyboard::Down) 
+                    else if (event.key.code == sf::Keyboard::Down)
                     {
-                        if (canMoveDown(currentPiece)) 
+                        if (canMoveDown(currentPiece))
                         {
                             currentPiece.y++;
                             score += 1;
+                            if (isTouchingGround) lockClock.restart();
                         }
                     }
-                    // --- hard drop ---
-                    else if (event.key.code == sf::Keyboard::Space) 
+                    else if (event.key.code == sf::Keyboard::Space)
                     {
                         int startY = currentPiece.y;
-                        while (canMoveDown(currentPiece)) 
-                        {
+                        while (canMoveDown(currentPiece))
                             currentPiece.y++;
-                        }
                         score += 2 * (currentPiece.y - startY);
 
-                        // "Wklej" klocek na planszę
-                        for (int py = 0; py < 4; ++py) 
-                            for (int px = 0; px < 4; ++px) 
-                                if (currentPiece.shape[py][px]) 
+                        for (int py = 0; py < 4; ++py)
+                            for (int px = 0; px < 4; ++px)
+                                if (currentPiece.shape[py][px])
                                     board[currentPiece.y + py][currentPiece.x + px] = (int)currentPiece.type + 1;
 
+                        soundDrop.play();
                         int lines = clearLines();
+                        if (lines > 0) soundClear.play();
                         if (lines == 1) score += 100;
                         else if (lines == 2) score += 300;
                         else if (lines == 3) score += 500;
                         else if (lines == 4) score += 800;
                         linesClearedTotal += lines;
                         level = 1 + (linesClearedTotal / 10);
-                        fallDelay = std::max(0.1f, 0.5f - 0.05f * (level - 1)); // im wyższy level, tym szybciej, min. 0.1s
+                        fallDelay = std::max(0.1f, 0.5f - 0.05f * (level - 1));
+                        if (level > lastLevel) { soundLevelUp.play(); lastLevel = level; }
 
-                        // Nowy klocek na górze
                         currentPiece = Piece(nextPieces.front());
                         nextPieces.erase(nextPieces.begin());
                         updateNextPieces();
                         setPieceXToMouse(window, currentPiece);
                         holdUsed = false;
 
-                        // Wykrywanie końca gry
-                        for (int px = 0; px < 4; ++px) 
-                            if (board[0][currentPiece.x + px]) 
-                                gameState = GameState::GAME_OVER;
+                        for (int px = 0; px < 4; ++px)
+                            if (board[0][currentPiece.x + px])
+                            {
+                                soundGameOver.play();
+                                soundtrack.stop();
+                                scene = Scene::GAME_OVER;
+                            }
                     }
-                    else if (event.key.code == sf::Keyboard::C) 
+                    else if (event.key.code == sf::Keyboard::C)
                     {
-                        if (!holdUsed) 
+                        if (!holdUsed)
                         {
-                            if (holdPiece == nullptr) 
+                            if (holdPiece == nullptr)
                             {
                                 holdPiece = new Piece(currentPiece.type);
                                 currentPiece = Piece(nextPieces.front());
@@ -672,8 +645,8 @@ int main()
                                 updateNextPieces();
                                 setPieceXToMouse(window, currentPiece);
                                 holdUsed = true;
-                            } 
-                            else 
+                            }
+                            else
                             {
                                 std::swap(currentPiece.type, holdPiece->type);
                                 currentPiece = Piece(currentPiece.type);
@@ -683,66 +656,114 @@ int main()
                         }
                     }
                 }
-                else if (gameState == GameState::GAME_OVER)
+                if (event.type == sf::Event::MouseMoved)
                 {
-                    if (event.key.code == sf::Keyboard::Enter) 
+                    setPieceXToMouse(window, currentPiece);
+                }
+                if (event.type == sf::Event::MouseButtonPressed)
+                {
+                    if (event.mouseButton.button == sf::Mouse::Left)
                     {
-                        gameState = GameState::MENU;
-                        gameMode = GameMode::NONE;
-                        
-                    }
-                    else if (event.key.code == sf::Keyboard::R) 
-                    {
-                        gameState = GameState::GAME;
+                        int startY = currentPiece.y;
+                        while (canMoveDown(currentPiece))
+                            currentPiece.y++;
+                        score += 2 * (currentPiece.y - startY);
 
-                        // Reset planszy
-                        for (int y = 0; y < boardHeight; y++) 
-                            for (int x = 0; x < boardWidth; x++) 
-                                board[y][x] = 0;
+                        for (int py = 0; py < 4; ++py)
+                            for (int px = 0; px < 4; ++px)
+                                if (currentPiece.shape[py][px])
+                                    board[currentPiece.y + py][currentPiece.x + px] = (int)currentPiece.type + 1;
 
-                        nextPieces.clear();
-                        updateNextPieces();
+                        soundDrop.play();
+                        int lines = clearLines();
+                        if (lines > 0) soundClear.play();
+                        if (lines == 1) score += 100;
+                        else if (lines == 2) score += 300;
+                        else if (lines == 3) score += 500;
+                        else if (lines == 4) score += 800;
+                        linesClearedTotal += lines;
+                        level = 1 + (linesClearedTotal / 10);
+                        fallDelay = std::max(0.1f, 0.5f - 0.05f * (level - 1));
+                        if (level > lastLevel) { soundLevelUp.play(); lastLevel = level; }
+
                         currentPiece = Piece(nextPieces.front());
                         nextPieces.erase(nextPieces.begin());
                         updateNextPieces();
                         setPieceXToMouse(window, currentPiece);
                         holdUsed = false;
 
-                        score = 0;
-                        linesClearedTotal = 0;
-                        level = 1;
+                        for (int px = 0; px < 4; ++px)
+                            if (board[0][currentPiece.x + px])
+                            {
+                                soundGameOver.play();
+                                soundtrack.stop();
+                                scene = Scene::GAME_OVER;
+                            }
                     }
                 }
             }
-            if (event.type == sf::Event::MouseMoved && gameState == GameState::GAME)
+            else if (scene == Scene::PAUSE)
             {
-                setPieceXToMouse(window, currentPiece);
-            }
-            if (event.type == sf::Event::MouseButtonPressed && gameState == GameState::GAME)
-            {
-                if (event.mouseButton.button == sf::Mouse::Left)
+                if (event.type == sf::Event::KeyPressed)
                 {
-                    // HARD DROP (identycznie jak spacja)
-                    int startY = currentPiece.y;
-                    while (canMoveDown(currentPiece)) 
+                    if (event.key.code == sf::Keyboard::Escape)
                     {
-                        currentPiece.y++;
+                        scene = Scene::GAME; // wraca do gry z pauzy
                     }
-                    score += 2 * (currentPiece.y - startY);
+                    else if (event.key.code == sf::Keyboard::Q)
+                    {
+                        soundGameOver.play();
+                        soundtrack.stop();
+                        scene = Scene::GAME_OVER; // kończy grę
+                    }
+                }
+            }
+            else if (scene == Scene::GAME_OVER)
+            {
+                if (event.type == sf::Event::KeyPressed)
+                {
+                    if (event.key.code == sf::Keyboard::Enter)
+                    {
+                        scene = Scene::TITLE;
+                        soundtrack.play();
+                        gameMode = GameMode::NONE;
+                    }
+                    else if (event.key.code == sf::Keyboard::R)
+                    {
+                        resetGame(window);
+                        scene = Scene::GAME;
+                        soundtrack.play();
+                    }
+                }
+            }
+        }
 
-                    // "Wklej" klocek na planszę
-                    for (int py = 0; py < 4; ++py) 
-                    {
-                        for (int px = 0; px < 4; ++px) 
-                        {
-                            if (currentPiece.shape[py][px]) 
-                            {
+        // --------- LOGIKA automatycznego opadania ---------
+        if (scene == Scene::GAME && fallClock.getElapsedTime().asSeconds() > fallDelay)
+        {
+            if (canMoveDown(currentPiece))
+            {
+                currentPiece.y++;
+                isTouchingGround = false;
+                lockClock.restart();
+            }
+            else
+            {
+                if (!isTouchingGround)
+                {
+                    isTouchingGround = true;
+                    lockClock.restart();
+                }
+                if (lockClock.getElapsedTime().asSeconds() >= lockDelayTime)
+                {
+                    soundDrop.play();
+                    for (int py = 0; py < 4; ++py)
+                        for (int px = 0; px < 4; ++px)
+                            if (currentPiece.shape[py][px])
                                 board[currentPiece.y + py][currentPiece.x + px] = (int)currentPiece.type + 1;
-                            }
-                        }
-                    }
 
                     int lines = clearLines();
+                    if (lines > 0) soundClear.play();
                     if (lines == 1) score += 100;
                     else if (lines == 2) score += 300;
                     else if (lines == 3) score += 500;
@@ -750,194 +771,149 @@ int main()
                     linesClearedTotal += lines;
                     level = 1 + (linesClearedTotal / 10);
                     fallDelay = std::max(0.1f, 0.5f - 0.05f * (level - 1));
-                    
-                    // Nowy klocek na górze pod myszką
+                    if (level > lastLevel) { soundLevelUp.play(); lastLevel = level; }
+
                     currentPiece = Piece(nextPieces.front());
                     nextPieces.erase(nextPieces.begin());
                     updateNextPieces();
                     setPieceXToMouse(window, currentPiece);
                     holdUsed = false;
 
-                    for (int px = 0; px < 4; ++px) 
-                    {
-                        if (board[0][currentPiece.x + px]) 
+                    for (int px = 0; px < 4; ++px)
+                        if (board[0][currentPiece.x + px])
                         {
-                            gameState = GameState::GAME_OVER;
+                            soundGameOver.play();
+                            soundtrack.stop();
+                            scene = Scene::GAME_OVER;
                         }
-                    }
-                }
-            }
-
-        }
-
-        // Automatyczne opadanie klocka
-        if (gameState == GameState::GAME && fallClock.getElapsedTime().asSeconds() > fallDelay)
-        {
-            if (canMoveDown(currentPiece)) 
-            {
-                currentPiece.y++;
-            } else {
-                // "Wklej" klocek na planszę
-                for (int py = 0; py < 4; ++py)
-                {
-                    for (int px = 0; px < 4; ++px) 
-                    {
-                        if (currentPiece.shape[py][px]) 
-                        {
-                            board[currentPiece.y + py][currentPiece.x + px] = (int)currentPiece.type + 1;
-                        }
-                    }
-                }
-
-                int lines = clearLines();
-                if (lines == 1) score += 100;
-                else if (lines == 2) score += 300;
-                else if (lines == 3) score += 500;
-                else if (lines == 4) score += 800;
-                linesClearedTotal += lines;
-                level = 1 + (linesClearedTotal / 10);
-                fallDelay = std::max(0.1f, 0.5f - 0.05f * (level - 1)); // im wyższy level, tym szybciej, min. 0.1s
-
-                // Nowy klocek na górze
-                currentPiece = Piece(nextPieces.front());
-                nextPieces.erase(nextPieces.begin());
-                updateNextPieces();
-                setPieceXToMouse(window, currentPiece);
-                holdUsed = false;
-
-                // Wykrywanie końca gry
-                for (int px = 0; px < 4; ++px) 
-                {
-                    if (board[0][currentPiece.x + px]) 
-                    {
-                        gameState = GameState::GAME_OVER;
-                    }
+                    isTouchingGround = false;
                 }
             }
             fallClock.restart();
         }
+
+        // ---------- RYSOWANIE -----------
         scoreText.setString("SCORE: " + std::to_string(score));
         linesText.setString("LINES: " + std::to_string(linesClearedTotal));
         levelText.setString("LEVEL: " + std::to_string(level));
         window.clear();
 
-        switch (gameState)
+        if (scene == Scene::TITLE)
         {
-            case GameState::MENU:
+            sf::Text title("TETRIS\nNacisnij [Enter] lub [Space] aby zaczac", font, 40);
+            title.setPosition(120, 140);
+            window.draw(title);
+        }
+        else if (scene == Scene::MODE_SELECT)
+        {
+            sf::Text modeText("WYBIERZ TRYB:\n1 - Normalny\n2 - Zaawansowany\n3 - Latwy\n4 - Trudny\n\n[Esc] Powrot", font, 32);
+            modeText.setPosition(100, 180);
+            window.draw(modeText);
+        }
+        else if (scene == Scene::GAME)
+        {
+            int gridWidth = boardWidth * cellSize;
+            int gridHeight = boardHeight * cellSize;
+            int offsetX = (window.getSize().x - gridWidth) / 2;
+            int offsetY = (window.getSize().y - gridHeight) / 2;
+
+            for (int y = 0; y < boardHeight; ++y)
             {
-                window.draw(menuText);
-                if (gameMode != GameMode::NONE && gameMode != GameMode::NORMAL)
-                {
-                    window.draw(notAvailableText);
+                for (int x = 0; x < boardWidth; ++x) {
+                    sf::RectangleShape cell(sf::Vector2f(cellSize-1, cellSize-1));
+                    cell.setPosition(offsetX + x * cellSize, offsetY + y * cellSize);
+                    if (board[y][x]) {
+                        sf::Color color = getPieceColor((TetrominoType)(board[y][x] - 1));
+                        cell.setFillColor(color);
+                    } else {
+                        cell.setFillColor(sf::Color(30,30,30));
+                    }
+                    window.draw(cell);
                 }
-                break;
             }
-            case GameState::GAME:
+            for (int py = 0; py < 4; ++py)
             {
-                int gridWidth = boardWidth * cellSize;
-                int gridHeight = boardHeight * cellSize;
-                int offsetX = (window.getSize().x - gridWidth) / 2;
-                int offsetY = (window.getSize().y - gridHeight) / 2;
-
-                // Rysowanie planszy
-                for (int y = 0; y < boardHeight; ++y)
+                for (int px = 0; px < 4; ++px)
                 {
-                    for (int x = 0; x < boardWidth; ++x) {
-                        sf::RectangleShape cell(sf::Vector2f(cellSize-1, cellSize-1));
-                        cell.setPosition(offsetX + x * cellSize, offsetY + y * cellSize);
-                        if (board[y][x]) {
-                            sf::Color color = getPieceColor((TetrominoType)(board[y][x] - 1));
-                            cell.setFillColor(color);
-                        } else {
-                            cell.setFillColor(sf::Color(30,30,30));
-                        }
-                        window.draw(cell);
-                    }
-                }
-                // Rysowanie klocka
-                for (int py = 0; py < 4; ++py)
-                {
-                    for (int px = 0; px < 4; ++px)
+                    if (currentPiece.shape[py][px])
                     {
-                        if (currentPiece.shape[py][px])
-                        {
-                            int by = currentPiece.y + py;
-                            int bx = currentPiece.x + px;
-                            // Rysuj tylko jeśli to pole nie jest już zajęte!
-                            if (by >= 0 && by < boardHeight && bx >= 0 && bx < boardWidth && board[by][bx] == 0) 
-                            {
-                                sf::RectangleShape cell(sf::Vector2f(cellSize-1, cellSize-1));
-                                cell.setPosition(offsetX + bx * cellSize, offsetY + by * cellSize);
-                                sf::Color color = getPieceColor(currentPiece.type);
-                                cell.setFillColor(color);
-                                window.draw(cell);
-                            }
-                        }
-                    }
-                }
-
-                // Rysowanie cienia (ghost piece)
-                int ghostY = currentPiece.y;
-                Piece ghostPiece = currentPiece;
-                while (canMoveDown(ghostPiece)) 
-                {
-                    ghostPiece.y++;
-                }
-                for (int py = 0; py < 4; ++py)
-                {
-                    for (int px = 0; px < 4; ++px)
-                    {
-                        if (ghostPiece.shape[py][px])
+                        int by = currentPiece.y + py;
+                        int bx = currentPiece.x + px;
+                        if (by >= 0 && by < boardHeight && bx >= 0 && bx < boardWidth && board[by][bx] == 0)
                         {
                             sf::RectangleShape cell(sf::Vector2f(cellSize-1, cellSize-1));
-                            cell.setPosition(offsetX + (ghostPiece.x + px) * cellSize, offsetY + (ghostPiece.y + py) * cellSize);
-                            cell.setFillColor(sf::Color(255, 255, 255, 90)); // przezroczysty biały
+                            cell.setPosition(offsetX + bx * cellSize, offsetY + by * cellSize);
+                            sf::Color color = getPieceColor(currentPiece.type);
+                            cell.setFillColor(color);
                             window.draw(cell);
                         }
                     }
                 }
-                drawNextPieces(window, nextPieces, offsetX, offsetY, cellSize);
-                window.draw(scoreText);
-                window.draw(linesText);
-                window.draw(levelText);
-
-                if (holdPiece) 
+            }
+            int ghostY = currentPiece.y;
+            Piece ghostPiece = currentPiece;
+            while (canMoveDown(ghostPiece))
+                ghostPiece.y++;
+            for (int py = 0; py < 4; ++py)
+            {
+                for (int px = 0; px < 4; ++px)
                 {
-                    Piece preview(holdPiece->type);
-                    int previewX = 50; // X pozycja holda
-                    int previewY = 180; // Y pozycja holda
-                    for (int py = 0; py < 4; ++py) 
+                    if (ghostPiece.shape[py][px])
                     {
-                        for (int px = 0; px < 4; ++px) 
+                        sf::RectangleShape cell(sf::Vector2f(cellSize-1, cellSize-1));
+                        cell.setPosition(offsetX + (ghostPiece.x + px) * cellSize, offsetY + (ghostPiece.y + py) * cellSize);
+                        cell.setFillColor(sf::Color(255, 255, 255, 90));
+                        window.draw(cell);
+                    }
+                }
+            }
+            drawNextPieces(window, nextPieces, offsetX, offsetY, cellSize);
+            window.draw(scoreText);
+            window.draw(linesText);
+            window.draw(levelText);
+
+            if (holdPiece)
+            {
+                Piece preview(holdPiece->type);
+                int previewX = 50;
+                int previewY = 180;
+                for (int py = 0; py < 4; ++py)
+                {
+                    for (int px = 0; px < 4; ++px)
+                    {
+                        if (preview.shape[py][px])
                         {
-                            if (preview.shape[py][px]) 
-                            {
-                                sf::RectangleShape cell(sf::Vector2f(cellSize - 8, cellSize - 8));
-                                cell.setPosition(previewX + px * (cellSize - 6), previewY + py * (cellSize - 6));
-                                cell.setFillColor(getPieceColor(preview.type));
-                                window.draw(cell);
-                            }
+                            sf::RectangleShape cell(sf::Vector2f(cellSize - 8, cellSize - 8));
+                            cell.setPosition(previewX + px * (cellSize - 6), previewY + py * (cellSize - 6));
+                            cell.setFillColor(getPieceColor(preview.type));
+                            window.draw(cell);
                         }
                     }
-                    // Etykieta
-                    sf::Text holdText("HOLD", font, 24);
-                    holdText.setPosition(previewX, previewY - 32);
-                    holdText.setFillColor(sf::Color::White);
-                    window.draw(holdText);
                 }
-                break;
+                sf::Text holdText("HOLD", font, 24);
+                holdText.setPosition(previewX, previewY - 32);
+                holdText.setFillColor(sf::Color::White);
+                window.draw(holdText);
             }
-            case GameState::GAME_OVER:
-            {
-                summaryText.setString(
-                    "SCORE: " + std::to_string(score) +
-                    "\nLINES: " + std::to_string(linesClearedTotal) +
-                    "\nLEVEL: " + std::to_string(level)
-                );
-                window.draw(gameOverText);
-                window.draw(summaryText);
-                break;
-            }
+        }
+        else if (scene == Scene::PAUSE)
+        {
+            sf::Text pausedText("PAUSED\n[Esc] Resume\n[Q] Quit", font, 48);
+            pausedText.setPosition(200, 250);
+            pausedText.setFillColor(sf::Color::White);
+            window.draw(pausedText);
+        }
+        else if (scene == Scene::GAME_OVER)
+        {
+            summaryText.setString(
+                "SCORE: " + std::to_string(score) +
+                "\nLINES: " + std::to_string(linesClearedTotal) +
+                "\nLEVEL: " + std::to_string(level)
+            );
+            sf::Text over("GAME OVER\n\n[Enter] - Menu\n[R] - Restart", font, 40);
+            over.setPosition(110, 180);
+            window.draw(over);
+            window.draw(summaryText);
         }
         window.display();
     }
