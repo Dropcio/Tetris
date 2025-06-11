@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <random>
 #include <cstring>
+#include <fstream>
 #include "piece.hpp"
 
 using namespace std;
@@ -25,15 +26,20 @@ const int boardWidth = 10;
 const int boardHeight = 20;
 const int cellSize = 30; // px
 
+float musicVolume = 100.0f;   
+float effectsVolume = 100.0f;  
 int score = 0;
 int linesClearedTotal = 0;
 int level = 1;
 int drought_I = 0;
 const int drought_limit = 10; // np. 10 ruchów bez I tryb hard
 int lastLevel = 1;
-
 const int drought_limit_advanced = 12;
+
 int droughtAdvanced[7] = {0,0,0,0,0,0,0};
+int highscore[5] = {0, 0, 0, 0, 0};
+int highscoreLevel[5] = {0, 0, 0, 0, 0};
+int highscoreLines[5] = {0, 0, 0, 0, 0};
 
 int board[boardHeight][boardWidth] = {0};
 
@@ -195,7 +201,8 @@ TetrominoType drawVeryHard()
     vector<TetrominoType> allTypes = {TetrominoType::I, TetrominoType::O, TetrominoType::T, TetrominoType::S, TetrominoType::Z, TetrominoType::J, TetrominoType::L};
     int maxHoles = -1;
     vector<TetrominoType> worst;
-    for (auto type : allTypes) {
+    for (auto type : allTypes) 
+    {
         if (type == TetrominoType::I && drought_I < drought_limit) continue; // przetrzymujemy I
         int localMax = -1;
         for (int rot = 0; rot < 4; ++rot) {
@@ -282,6 +289,23 @@ TetrominoType drawAdvanced()
         else droughtAdvanced[i]++;
     }
     return (TetrominoType)chosenIdx;
+}
+
+void loadHighscores() 
+{
+    ifstream f("highscore.dat");
+    for (int i = 0; i < 5; ++i) 
+    {
+        if (!(f >> highscore[i] >> highscoreLevel[i] >> highscoreLines[i]))
+        highscore[i] = highscoreLevel[i] = highscoreLines[i] = 0;
+    }
+}
+
+void saveHighscores() 
+{
+    ofstream f("highscore.dat");
+    for (int i = 0; i < 5; ++i)
+        f << highscore[i] << " " << highscoreLevel[i] << " " << highscoreLines[i] << "\n";
 }
 
 void refillBag() 
@@ -415,9 +439,10 @@ void resetGame(sf::RenderWindow& window)
 
 int main()
 {
+    loadHighscores();
     refillBag();
-    sf::RenderWindow window(sf::VideoMode(1000, 800), "Tetris!");
-    //sf::RenderWindow window(sf::VideoMode(800, 600), "Tetris!");
+    sf::VideoMode desktop = sf::VideoMode::getDesktopMode();
+    sf::RenderWindow window(desktop, "Tetris!", sf::Style::Fullscreen);
 
     sf::Font font;
     font.loadFromFile("arial.ttf");
@@ -438,6 +463,12 @@ int main()
     soundtrack.openFromFile("sounds/soundtrack.wav"); 
     soundtrack.setLoop(true);
     soundtrack.play();
+
+    soundtrack.setVolume(musicVolume);
+    soundClear.setVolume(effectsVolume);
+    soundDrop.setVolume(effectsVolume);
+    soundGameOver.setVolume(effectsVolume);
+    soundLevelUp.setVolume(effectsVolume);
 
     sf::Text gameText("Tetris Gra - [Esc] = Game Over", font, 32);
     gameText.setPosition(130, 250);
@@ -490,10 +521,12 @@ int main()
             // ----------------
             if (scene == Scene::TITLE)
             {
-                if (event.type == sf::Event::KeyPressed &&
-                    (event.key.code == sf::Keyboard::Enter || event.key.code == sf::Keyboard::Space))
+                if (event.type == sf::Event::KeyPressed)
                 {
-                    scene = Scene::MODE_SELECT;
+                    if (event.key.code == sf::Keyboard::Enter || event.key.code == sf::Keyboard::Space)
+                        scene = Scene::MODE_SELECT;
+                    else if (event.key.code == sf::Keyboard::Q)
+                        window.close();
                 }
             }
             else if (scene == Scene::MODE_SELECT)
@@ -504,12 +537,41 @@ int main()
                     else if (event.key.code == sf::Keyboard::Num2) { gameMode = GameMode::ADVANCED; resetGame(window); scene = Scene::GAME; }
                     else if (event.key.code == sf::Keyboard::Num3) { gameMode = GameMode::EASY; resetGame(window); scene = Scene::GAME; }
                     else if (event.key.code == sf::Keyboard::Num4) { gameMode = GameMode::HARD; resetGame(window); scene = Scene::GAME; }
+                    else if (event.key.code == sf::Keyboard::Escape) { scene = Scene::TITLE; }
                 }
             }
             else if (scene == Scene::GAME)
             {
                 if (event.type == sf::Event::KeyPressed)
                 {
+                    // Muzyka
+                    if (event.key.code == sf::Keyboard::Add) 
+                    {
+                        musicVolume = std::min(musicVolume + 10.0f, 100.0f);
+                        soundtrack.setVolume(musicVolume);
+                    }
+                    if (event.key.code == sf::Keyboard::Subtract) 
+                    {
+                        musicVolume = std::max(musicVolume - 10.0f, 0.0f);
+                        soundtrack.setVolume(musicVolume);
+                    }
+                    // Efekty
+                    if (event.key.code == sf::Keyboard::PageUp) 
+                    {
+                        effectsVolume = std::min(effectsVolume + 10.0f, 100.0f);
+                        soundClear.setVolume(effectsVolume);
+                        soundDrop.setVolume(effectsVolume);
+                        soundGameOver.setVolume(effectsVolume);
+                        soundLevelUp.setVolume(effectsVolume);
+                    }
+                    if (event.key.code == sf::Keyboard::PageDown) 
+                    {
+                        effectsVolume = std::max(effectsVolume - 10.0f, 0.0f);
+                        soundClear.setVolume(effectsVolume);
+                        soundDrop.setVolume(effectsVolume);
+                        soundGameOver.setVolume(effectsVolume);
+                        soundLevelUp.setVolume(effectsVolume);
+                    }
                     if (event.key.code == sf::Keyboard::Escape)
                     {
                         scene = Scene::PAUSE;
@@ -800,7 +862,7 @@ int main()
 
         if (scene == Scene::TITLE)
         {
-            sf::Text title("TETRIS\nNacisnij [Enter] lub [Space] aby zaczac", font, 40);
+            sf::Text title("TETRIS\n[Enter] lub [Space] - Start\n[Q] - Wyjscie", font, 40);
             title.setPosition(120, 140);
             window.draw(title);
         }
@@ -905,10 +967,21 @@ int main()
         }
         else if (scene == Scene::GAME_OVER)
         {
+            if (score > highscore[(int)gameMode])
+            {
+                highscore[(int)gameMode] = score;
+                highscoreLevel[(int)gameMode] = level;
+                highscoreLines[(int)gameMode] = linesClearedTotal;
+                saveHighscores();
+            }
             summaryText.setString(
                 "SCORE: " + std::to_string(score) +
                 "\nLINES: " + std::to_string(linesClearedTotal) +
-                "\nLEVEL: " + std::to_string(level)
+                "\nLEVEL: " + std::to_string(level) +
+                "\nHIGHSCORE: " + std::to_string(highscore[(int)gameMode]) +
+                " (LVL " + std::to_string(highscoreLevel[(int)gameMode]) +
+                ", LINES " + std::to_string(highscoreLines[(int)gameMode]) + ")"
+
             );
             sf::Text over("GAME OVER\n\n[Enter] - Menu\n[R] - Restart", font, 40);
             over.setPosition(110, 180);
