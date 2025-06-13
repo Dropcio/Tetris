@@ -24,7 +24,7 @@ mt19937 rng(std::random_device{}());
 
 const int boardWidth = 10;
 const int boardHeight = 20;
-const int cellSize = 30; // px
+int cellSize;
 
 float musicVolume = 100.0f;   
 float effectsVolume = 100.0f;  
@@ -340,8 +340,21 @@ TetrominoType drawFromBag()
 }
 
 sf::Color getPieceColor(TetrominoType type);
-void drawNextPieces(sf::RenderWindow& window, vector<TetrominoType>& nextPieces, int offsetX, int offsetY, int cellSize) 
+void drawRoundedCell(sf::RenderWindow& window, sf::Vector2f pos, float size, sf::Color color, float radius = 7.f);
+void drawNextPieces(sf::RenderWindow& window, const sf::Font& font, vector<TetrominoType>& nextPieces, int offsetX, int offsetY, int cellSize) 
 {
+    sf::RectangleShape nextFrame(sf::Vector2f(4 * (cellSize - 6) + 16, 3 * 4 * (cellSize - 6) + 24));
+    nextFrame.setPosition(offsetX + boardWidth * cellSize + 32, offsetY + 24);
+    nextFrame.setFillColor(sf::Color(30,30,30,200)); // tło ramki
+    nextFrame.setOutlineThickness(3);
+    nextFrame.setOutlineColor(sf::Color::White);
+    window.draw(nextFrame);
+
+    sf::Text nextText("NEXT", font, 24);
+    nextText.setPosition(nextFrame.getPosition().x + 10, nextFrame.getPosition().y - 28);
+    nextText.setFillColor(sf::Color::White);
+    window.draw(nextText);
+
     for (int idx = 0; idx < 3; ++idx) 
     {
         Piece preview(nextPieces[idx]);
@@ -354,10 +367,7 @@ void drawNextPieces(sf::RenderWindow& window, vector<TetrominoType>& nextPieces,
             {
                 if (preview.shape[py][px]) 
                 {
-                    sf::RectangleShape cell(sf::Vector2f(cellSize - 8, cellSize - 8));
-                    cell.setPosition(previewX + px * (cellSize - 6), previewY + py * (cellSize - 6));
-                    cell.setFillColor(getPieceColor(preview.type));
-                    window.draw(cell);
+                    drawRoundedCell(window, sf::Vector2f(previewX + px * (cellSize - 6), previewY + py * (cellSize - 6)), cellSize - 8, getPieceColor(preview.type));
                 }
             }
         }
@@ -418,6 +428,34 @@ sf::Color getPieceColor(TetrominoType type)
     }
 }
 
+void drawRoundedCell(sf::RenderWindow& window, sf::Vector2f pos, float size, sf::Color color, float radius)
+{
+    // Podstawa - kwadrat
+    sf::RectangleShape cell(sf::Vector2f(size, size));
+    cell.setPosition(pos);
+    cell.setFillColor(color);
+    cell.setOutlineThickness(2); // grubość obramowania
+    cell.setOutlineColor(sf::Color(50, 50, 50));
+    window.draw(cell);
+
+    // 4 rogi jako kółka
+    sf::CircleShape corner(radius);
+    corner.setFillColor(color);
+
+    // Lewy górny
+    corner.setPosition(pos.x, pos.y);
+    window.draw(corner);
+    // Prawy górny
+    corner.setPosition(pos.x + size - 2*radius, pos.y);
+    window.draw(corner);
+    // Lewy dolny
+    corner.setPosition(pos.x, pos.y + size - 2*radius);
+    window.draw(corner);
+    // Prawy dolny
+    corner.setPosition(pos.x + size - 2*radius, pos.y + size - 2*radius);
+    window.draw(corner);
+}
+
 void resetGame(sf::RenderWindow& window) 
 {
     nextPieces.clear();
@@ -443,6 +481,7 @@ int main()
     refillBag();
     sf::VideoMode desktop = sf::VideoMode::getDesktopMode();
     sf::RenderWindow window(desktop, "Tetris!", sf::Style::Fullscreen);
+    cellSize = std::min(window.getSize().x / (boardWidth + 10), window.getSize().y / (boardHeight + 2));
 
     sf::Font font;
     font.loadFromFile("arial.ttf");
@@ -881,17 +920,34 @@ int main()
 
             for (int y = 0; y < boardHeight; ++y)
             {
-                for (int x = 0; x < boardWidth; ++x) {
+                for (int x = 0; x < boardWidth; ++x) 
+                {
                     sf::RectangleShape cell(sf::Vector2f(cellSize-1, cellSize-1));
                     cell.setPosition(offsetX + x * cellSize, offsetY + y * cellSize);
                     if (board[y][x]) {
                         sf::Color color = getPieceColor((TetrominoType)(board[y][x] - 1));
                         cell.setFillColor(color);
-                    } else {
+                    } 
+                    else 
+                    {
                         cell.setFillColor(sf::Color(30,30,30));
                     }
                     window.draw(cell);
                 }
+            }
+            for (int x = 0; x <= boardWidth; ++x) 
+            {
+                sf::RectangleShape line(sf::Vector2f(2, boardHeight * cellSize));
+                line.setPosition(offsetX + x * cellSize - 1, offsetY);
+                line.setFillColor(sf::Color(60, 60, 60));
+                window.draw(line);
+            }
+            for (int y = 0; y <= boardHeight; ++y) 
+            {
+                sf::RectangleShape line(sf::Vector2f(boardWidth * cellSize, 2));
+                line.setPosition(offsetX, offsetY + y * cellSize - 1);
+                line.setFillColor(sf::Color(60, 60, 60));
+                window.draw(line);
             }
             for (int py = 0; py < 4; ++py)
             {
@@ -903,11 +959,8 @@ int main()
                         int bx = currentPiece.x + px;
                         if (by >= 0 && by < boardHeight && bx >= 0 && bx < boardWidth && board[by][bx] == 0)
                         {
-                            sf::RectangleShape cell(sf::Vector2f(cellSize-1, cellSize-1));
-                            cell.setPosition(offsetX + bx * cellSize, offsetY + by * cellSize);
                             sf::Color color = getPieceColor(currentPiece.type);
-                            cell.setFillColor(color);
-                            window.draw(cell);
+                            drawRoundedCell(window, sf::Vector2f(offsetX + bx * cellSize, offsetY + by * cellSize), cellSize-1, color);
                         }
                     }
                 }
@@ -922,14 +975,25 @@ int main()
                 {
                     if (ghostPiece.shape[py][px])
                     {
-                        sf::RectangleShape cell(sf::Vector2f(cellSize-1, cellSize-1));
-                        cell.setPosition(offsetX + (ghostPiece.x + px) * cellSize, offsetY + (ghostPiece.y + py) * cellSize);
-                        cell.setFillColor(sf::Color(255, 255, 255, 90));
-                        window.draw(cell);
+                        int by = ghostPiece.y + py;
+                        int bx = ghostPiece.x + px;
+                        if (by >= 0 && by < boardHeight && bx >= 0 && bx < boardWidth)
+                        {
+                            sf::RectangleShape ghostCell(sf::Vector2f(cellSize - 1, cellSize - 1));
+                            ghostCell.setPosition(offsetX + bx * cellSize, offsetY + by * cellSize);
+                            sf::Color color = getPieceColor(ghostPiece.type);
+                            color.a = 90;
+                            ghostCell.setFillColor(color);
+                            window.draw(ghostCell);
+                        }
                     }
                 }
             }
-            drawNextPieces(window, nextPieces, offsetX, offsetY, cellSize);
+            drawNextPieces(window, font, nextPieces, offsetX, offsetY, cellSize);
+            sf::Text scoreShadow = scoreText;
+            scoreShadow.setFillColor(sf::Color(0,0,0,120)); // czarny cień
+            scoreShadow.setPosition(scoreText.getPosition().x + 3, scoreText.getPosition().y + 3);
+            window.draw(scoreShadow);
             window.draw(scoreText);
             window.draw(linesText);
             window.draw(levelText);
@@ -945,10 +1009,7 @@ int main()
                     {
                         if (preview.shape[py][px])
                         {
-                            sf::RectangleShape cell(sf::Vector2f(cellSize - 8, cellSize - 8));
-                            cell.setPosition(previewX + px * (cellSize - 6), previewY + py * (cellSize - 6));
-                            cell.setFillColor(getPieceColor(preview.type));
-                            window.draw(cell);
+                            drawRoundedCell(window, sf::Vector2f(previewX + px * (cellSize - 6), previewY + py * (cellSize - 6)), cellSize - 8, getPieceColor(preview.type));
                         }
                     }
                 }
