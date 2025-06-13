@@ -26,8 +26,12 @@ const int boardWidth = 10;
 const int boardHeight = 20;
 int cellSize;
 
-float musicVolume = 100.0f;   
-float effectsVolume = 100.0f;  
+float musicVolume = 2.0f;   
+float effectsVolume = 20.0f;   //100.0f;
+
+const int nextPanelWidth = 200;
+const int nextPanelHeight = 380;
+
 int score = 0;
 int linesClearedTotal = 0;
 int level = 1;
@@ -341,36 +345,84 @@ TetrominoType drawFromBag()
 
 sf::Color getPieceColor(TetrominoType type);
 void drawRoundedCell(sf::RenderWindow& window, sf::Vector2f pos, float size, sf::Color color, float radius = 7.f);
-void drawNextPieces(sf::RenderWindow& window, const sf::Font& font, vector<TetrominoType>& nextPieces, int offsetX, int offsetY, int cellSize) 
+void drawNextPanel(
+    sf::RenderWindow& window, const sf::Font& font, 
+    const std::vector<TetrominoType>& nextPieces, 
+    int cellSize, int panelX, int panelY,
+    int panelWidth, int panelHeight 
+)
 {
-    sf::RectangleShape nextFrame(sf::Vector2f(4 * (cellSize - 6) + 16, 3 * 4 * (cellSize - 6) + 24));
-    nextFrame.setPosition(offsetX + boardWidth * cellSize + 32, offsetY + 24);
-    nextFrame.setFillColor(sf::Color(30,30,30,200)); // tło ramki
-    nextFrame.setOutlineThickness(3);
-    nextFrame.setOutlineColor(sf::Color::White);
-    window.draw(nextFrame);
+    const int numPreviews = 3;
+    const int border = 8;
 
-    sf::Text nextText("NEXT", font, 24);
-    nextText.setPosition(nextFrame.getPosition().x + 10, nextFrame.getPosition().y - 28);
+    // 1. Biała ramka
+    sf::RectangleShape outer(sf::Vector2f(panelWidth, panelHeight));
+    outer.setPosition(panelX, panelY);
+    outer.setFillColor(sf::Color::White);
+    window.draw(outer);
+
+    // 2. DUŻY SZARY PROSTOKĄT (całe wnętrze, nie tylko pasek!)
+    sf::RectangleShape darkbg(sf::Vector2f(panelWidth - 2 * border, panelHeight - 2 * border));
+    darkbg.setPosition(panelX + border, panelY + border);
+    darkbg.setFillColor(sf::Color(35, 35, 35));
+    window.draw(darkbg);
+
+    // 3. Pasek NEXT u góry (ciemniejszy szary, krótszy na wysokość)
+    int nextBarH = 38;
+    sf::RectangleShape bar(sf::Vector2f(panelWidth - 2 * border, nextBarH));
+    bar.setPosition(panelX + border, panelY + border);
+    bar.setFillColor(sf::Color(85, 85, 85));
+    window.draw(bar);
+
+    // 4. Napis NEXT (wyśrodkowany)
+    sf::Text nextText("NEXT", font, 26);
+    nextText.setStyle(sf::Text::Bold);
     nextText.setFillColor(sf::Color::White);
+    float textX = panelX + border + ((panelWidth - 2 * border) - nextText.getLocalBounds().width) / 2;
+    float textY = panelY + border + 2;
+    nextText.setPosition(textX, textY);
     window.draw(nextText);
 
-    for (int idx = 0; idx < 3; ++idx) 
-    {
-        Piece preview(nextPieces[idx]);
-        int previewX = offsetX + boardWidth * cellSize + 40;
-        int previewY = offsetY + 40 + idx * 120;
+    // 5. Przestrzeń na klocki
+    int piecesAreaY = panelY + border + nextBarH + 8;
+    int piecesAreaHeight = panelHeight - 2 * border - nextBarH - 14;
 
-        for (int py = 0; py < 4; ++py) 
-        {
-            for (int px = 0; px < 4; ++px) 
-            {
-                if (preview.shape[py][px]) 
-                {
-                    drawRoundedCell(window, sf::Vector2f(previewX + px * (cellSize - 6), previewY + py * (cellSize - 6)), cellSize - 8, getPieceColor(preview.type));
+    // Największy możliwy rozmiar komórki
+    int previewCell = piecesAreaHeight / (numPreviews * 4 + 1); // +1 daje trochę marginesu
+
+    // 6. Rysuj 3 kolejne klocki, równo rozmieszczone
+    for (int idx = 0; idx < numPreviews && idx < (int)nextPieces.size(); ++idx) {
+        Piece preview(nextPieces[idx]);
+
+        // Znajdź rozmiar bounding boxa klocka
+        int minPx = 4, maxPx = -1, minPy = 4, maxPy = -1;
+        for (int py = 0; py < 4; ++py)
+            for (int px = 0; px < 4; ++px)
+                if (preview.shape[py][px]) {
+                    if (px < minPx) minPx = px;
+                    if (px > maxPx) maxPx = px;
+                    if (py < minPy) minPy = py;
+                    if (py > maxPy) maxPy = py;
                 }
-            }
-        }
+        int blocksW = maxPx - minPx + 1;
+        int blocksH = maxPy - minPy + 1;
+
+        // Pozycja pionowa dla tego klocka
+        int slotHeight = piecesAreaHeight / numPreviews;
+        int slotY = piecesAreaY + idx * slotHeight;
+
+        // Wyśrodkowanie w slocie pionowo i poziomo
+        int baseX = panelX + border + ((panelWidth - 2 * border) - blocksW * previewCell) / 2 - minPx * previewCell;
+        int baseY = slotY + (slotHeight - blocksH * previewCell) / 2 - minPy * previewCell;
+
+        for (int py = 0; py < 4; ++py)
+            for (int px = 0; px < 4; ++px)
+                if (preview.shape[py][px]) {
+                    sf::RectangleShape rect(sf::Vector2f(previewCell-2, previewCell-2));
+                    rect.setFillColor(getPieceColor(preview.type));
+                    rect.setPosition(baseX + px * previewCell, baseY + py * previewCell);
+                    window.draw(rect);
+                }
     }
 }
 
@@ -456,8 +508,183 @@ void drawRoundedCell(sf::RenderWindow& window, sf::Vector2f pos, float size, sf:
     window.draw(corner);
 }
 
+void drawPanel(sf::RenderWindow& window, sf::Vector2f pos, sf::Vector2f size, const std::string& label, sf::Font& font)
+{
+    // Tło panelu z lekkim gradientem
+    sf::RectangleShape panel(size);
+    panel.setPosition(pos);
+    // Gradient: górny szary, dolny jaśniejszy szary (imitacja gradientu ręcznie)
+    sf::Color colorTop(180, 180, 180, 255);
+    sf::Color colorBottom(240, 240, 240, 255);
+    // Niestety SFML nie ma gradientu - więc prosty kompromis: dwa prostokąty
+    panel.setFillColor(colorBottom);
+    window.draw(panel);
+    sf::RectangleShape topRect(sf::Vector2f(size.x, size.y/2));
+    topRect.setPosition(pos);
+    topRect.setFillColor(colorTop);
+    window.draw(topRect);
+
+    // Ramka z zaokrąglonymi rogami (imitacja)
+    panel.setOutlineThickness(5);
+    panel.setOutlineColor(sf::Color(220, 220, 220, 255));
+    panel.setFillColor(sf::Color::Transparent);
+    window.draw(panel);
+
+    // Cień (pseudo-cień pod spodem)
+    sf::RectangleShape shadow(size);
+    shadow.setPosition(pos.x+4, pos.y+4);
+    shadow.setFillColor(sf::Color(0,0,0,40));
+    window.draw(shadow);
+
+    // Label
+    sf::Text text(label, font, 20);
+    text.setStyle(sf::Text::Bold);
+    text.setFillColor(sf::Color::White);
+    text.setPosition(
+        pos.x + (size.x - text.getLocalBounds().width) / 2,
+        pos.y + 5
+    );
+    window.draw(text);
+}
+
+void drawHoldPanel(
+    sf::RenderWindow& window, const sf::Font& font,
+    TetrominoType holdType,
+    int cellSize, int panelX, int panelY,
+    int panelWidth, int panelHeight
+) {
+    const int border = 8;
+    // 1. Biała ramka
+    sf::RectangleShape outer(sf::Vector2f(panelWidth, panelHeight));
+    outer.setPosition(panelX, panelY);
+    outer.setFillColor(sf::Color::White);
+    window.draw(outer);
+
+    // 2. Szary prostokąt na całą powierzchnię środka
+    sf::RectangleShape darkbg(sf::Vector2f(panelWidth - 2 * border, panelHeight - 2 * border));
+    darkbg.setPosition(panelX + border, panelY + border);
+    darkbg.setFillColor(sf::Color(35, 35, 35));
+    window.draw(darkbg);
+
+    // 3. Pasek na górze pod napisem HOLD
+    int holdBarH = 38;
+    sf::RectangleShape bar(sf::Vector2f(panelWidth - 2 * border, holdBarH));
+    bar.setPosition(panelX + border, panelY + border);
+    bar.setFillColor(sf::Color(80, 80, 80));
+    window.draw(bar);
+
+    // 4. Napis HOLD (wyśrodkowany)
+    sf::Text holdText("HOLD", font, 26);
+    holdText.setStyle(sf::Text::Bold);
+    holdText.setFillColor(sf::Color::White);
+    float textX = panelX + border + ((panelWidth - 2 * border) - holdText.getLocalBounds().width) / 2;
+    float textY = panelY + border + 2;
+    holdText.setPosition(textX, textY);
+    window.draw(holdText);
+
+    // 5. Przestrzeń na klocka
+    int pieceAreaY = panelY + border + holdBarH + 8;
+    int pieceAreaHeight = panelHeight - 2 * border - holdBarH - 14;
+    int previewCell = pieceAreaHeight / 6; // rozmiar komórki – większy margines
+
+    // Rysuj klocek jeśli jest
+    if (holdType != TetrominoType(-1)) {
+        Piece preview(holdType);
+
+        // Bounding box klocka
+        int minPx = 4, maxPx = -1, minPy = 4, maxPy = -1;
+        for (int py = 0; py < 4; ++py)
+            for (int px = 0; px < 4; ++px)
+                if (preview.shape[py][px]) {
+                    if (px < minPx) minPx = px;
+                    if (px > maxPx) maxPx = px;
+                    if (py < minPy) minPy = py;
+                    if (py > maxPy) maxPy = py;
+                }
+        int blocksW = maxPx - minPx + 1;
+        int blocksH = maxPy - minPy + 1;
+
+        // Wyśrodkowanie klocka
+        int baseX = panelX + border + ((panelWidth - 2 * border) - blocksW * previewCell) / 2 - minPx * previewCell;
+        int baseY = pieceAreaY + (pieceAreaHeight - blocksH * previewCell) / 2 - minPy * previewCell;
+
+        for (int py = 0; py < 4; ++py)
+            for (int px = 0; px < 4; ++px)
+                if (preview.shape[py][px]) {
+                    sf::RectangleShape rect(sf::Vector2f(previewCell-2, previewCell-2));
+                    rect.setFillColor(getPieceColor(preview.type));
+                    rect.setPosition(baseX + px * previewCell, baseY + py * previewCell);
+                    window.draw(rect);
+                }
+    }
+}
+
+void drawScorePanel(
+    sf::RenderWindow& window, const sf::Font& font,
+    int score, int level, int lines,
+    int panelX, int panelY,
+    int panelW, int panelH
+)
+{
+    const int border = 8;
+    int cellH = (panelH - 2 * border) / 3;
+
+    // Biała ramka + tło panelu (ciemny)
+    sf::RectangleShape outer(sf::Vector2f(panelW, panelH));
+    outer.setPosition(panelX, panelY);
+    outer.setFillColor(sf::Color::White);
+    window.draw(outer);
+
+    sf::RectangleShape bg(sf::Vector2f(panelW - 2 * border, panelH - 2 * border));
+    bg.setPosition(panelX + border, panelY + border);
+    bg.setFillColor(sf::Color(35, 35, 35));
+    window.draw(bg);
+
+    std::vector<std::string> labels = {"SCORE", "LEVEL", "LINES"};
+    std::vector<int> values = {score, level, lines};
+
+    for (int i = 0; i < 3; ++i) {
+        int y = panelY + border + i * cellH;
+
+        // SZARY pasek pod napisem (jak HOLD/NEXT)
+        int barH = 36;
+        sf::RectangleShape bar(sf::Vector2f(panelW - 2 * border, barH));
+        bar.setPosition(panelX + border, y);
+        bar.setFillColor(sf::Color(85, 85, 85));
+        window.draw(bar);
+
+        // NAPIS – duży, biały, wyśrodkowany, bez tła!
+        sf::Text label(labels[i], font, 30);
+        label.setStyle(sf::Text::Bold);
+        label.setFillColor(sf::Color::White);
+        sf::FloatRect lRect = label.getLocalBounds();
+        float lx = panelX + border + ((panelW - 2 * border) - lRect.width) / 2 - lRect.left;
+        float ly = y + (barH - lRect.height) / 2 - 5;
+        label.setPosition(lx, ly);
+        window.draw(label);
+
+        // CZARNE tło tylko pod liczbą!
+        int numH = cellH * 0.52;
+        sf::RectangleShape cell(sf::Vector2f(panelW - 2 * border, numH));
+        cell.setPosition(panelX + border, y + barH);
+        cell.setFillColor(sf::Color(18,18,18));
+        window.draw(cell);
+
+        // LICZBA – duża, wyśrodkowana na czarnym polu
+        sf::Text val(std::to_string(values[i]), font, 38);
+        val.setStyle(sf::Text::Bold);
+        val.setFillColor(sf::Color(220, 220, 220));
+        sf::FloatRect vRect = val.getLocalBounds();
+        float vx = panelX + border + ((panelW - 2 * border) - vRect.width) / 2 - vRect.left;
+        float vy = y + barH + (numH - vRect.height) / 2 - 7;
+        val.setPosition(vx, vy);
+        window.draw(val);
+    }
+}
+
 void resetGame(sf::RenderWindow& window) 
 {
+    if (holdPiece) { delete holdPiece; holdPiece = nullptr; }
     nextPieces.clear();
     updateNextPieces();
     currentPiece = Piece(nextPieces.front());
@@ -481,6 +708,7 @@ int main()
     refillBag();
     sf::VideoMode desktop = sf::VideoMode::getDesktopMode();
     sf::RenderWindow window(desktop, "Tetris!", sf::Style::Fullscreen);
+    //sf::RenderWindow window(sf::VideoMode(2400, 1200), "Tetris!", sf::Style::Default);  //testowanie
     cellSize = std::min(window.getSize().x / (boardWidth + 10), window.getSize().y / (boardHeight + 2));
 
     sf::Font font;
@@ -894,9 +1122,9 @@ int main()
         }
 
         // ---------- RYSOWANIE -----------
-        scoreText.setString("SCORE: " + std::to_string(score));
-        linesText.setString("LINES: " + std::to_string(linesClearedTotal));
-        levelText.setString("LEVEL: " + std::to_string(level));
+        scoreText.setString(std::to_string(score));
+        levelText.setString(std::to_string(level));
+        linesText.setString(std::to_string(linesClearedTotal));
         window.clear();
 
         if (scene == Scene::TITLE)
@@ -917,6 +1145,15 @@ int main()
             int gridHeight = boardHeight * cellSize;
             int offsetX = (window.getSize().x - gridWidth) / 2;
             int offsetY = (window.getSize().y - gridHeight) / 2;
+
+            const int panelWidth = boardHeight * cellSize / 4;
+            const int panelHeight = boardHeight * cellSize / 2;
+            
+            const int boardBorder = 6;
+            sf::RectangleShape gridFrame(sf::Vector2f(gridWidth + 2 * boardBorder, gridHeight + 2 * boardBorder));
+            gridFrame.setPosition(offsetX - boardBorder, offsetY - boardBorder);
+            gridFrame.setFillColor(sf::Color::White);
+            window.draw(gridFrame);
 
             for (int y = 0; y < boardHeight; ++y)
             {
@@ -989,35 +1226,36 @@ int main()
                     }
                 }
             }
-            drawNextPieces(window, font, nextPieces, offsetX, offsetY, cellSize);
+            drawNextPanel(
+                window, font, nextPieces, cellSize,
+                offsetX + gridWidth + 60,
+                offsetY + 40,
+                panelWidth,    
+                panelHeight       
+            );
+
             sf::Text scoreShadow = scoreText;
             scoreShadow.setFillColor(sf::Color(0,0,0,120)); // czarny cień
             scoreShadow.setPosition(scoreText.getPosition().x + 3, scoreText.getPosition().y + 3);
-            window.draw(scoreShadow);
-            window.draw(scoreText);
-            window.draw(linesText);
-            window.draw(levelText);
 
-            if (holdPiece)
-            {
-                Piece preview(holdPiece->type);
-                int previewX = 50;
-                int previewY = 180;
-                for (int py = 0; py < 4; ++py)
-                {
-                    for (int px = 0; px < 4; ++px)
-                    {
-                        if (preview.shape[py][px])
-                        {
-                            drawRoundedCell(window, sf::Vector2f(previewX + px * (cellSize - 6), previewY + py * (cellSize - 6)), cellSize - 8, getPieceColor(preview.type));
-                        }
-                    }
-                }
-                sf::Text holdText("HOLD", font, 24);
-                holdText.setPosition(previewX, previewY - 32);
-                holdText.setFillColor(sf::Color::White);
-                window.draw(holdText);
-            }
+            // oblicz pozycje analogicznie jak panel NEXT, blisko planszy po lewej
+            int panelW = boardHeight * cellSize / 4;
+            int holdPanelH = boardHeight * cellSize / 4 + 40;
+            int scorePanelH = 320;
+
+            int panelX = offsetX - panelW - 60;
+
+            // HOLD na wysokości NEXT (czyli wysokość offsetY + 40)
+            int holdPanelY = offsetY + 40;
+
+            // SCORE dużo niżej – praktycznie przy dole planszy
+            int scorePanelY = offsetY + gridHeight - scorePanelH - 30; // 24px odstęp od dołu
+
+            drawHoldPanel(window, font, holdPiece ? holdPiece->type : TetrominoType(-1),
+                cellSize, panelX, holdPanelY, panelW, holdPanelH);
+
+            drawScorePanel(window, font, score, level, linesClearedTotal,
+                panelX, scorePanelY, panelW, scorePanelH);
         }
         else if (scene == Scene::PAUSE)
         {
